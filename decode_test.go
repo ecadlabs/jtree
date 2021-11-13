@@ -182,6 +182,7 @@ type T0 struct {
 	F1 string `json:"f1"`
 	*T2
 	FF *string
+	*unexported
 }
 
 type T1 struct {
@@ -196,6 +197,10 @@ type T2 struct {
 	ZZ *string
 }
 
+type unexported struct {
+	XX int
+}
+
 func TestObject(t *testing.T) {
 	src := Fields{
 		{"F0", (*Num)(big.NewFloat(1))},
@@ -205,6 +210,7 @@ func TestObject(t *testing.T) {
 		{"f4", String("ccc")},
 		{"S", (*Num)(big.NewFloat(2))},
 		{"ZZ", Null{}},
+		{"XX", (*Num)(big.NewFloat(3))},
 	}
 	expect := T0{
 		T1: T1{

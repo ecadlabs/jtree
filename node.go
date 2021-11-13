@@ -545,6 +545,9 @@ func collectFields(t reflect.Type, index []int, ptr []reflect.Type, out map[stri
 			// dive
 			ft := f.Type
 			if ft.Kind() == reflect.Ptr {
+				if !f.IsExported() {
+					continue
+				}
 				i := 0
 				for ; i < len(ptr) && ptr[i] != ft; i++ {
 				}
