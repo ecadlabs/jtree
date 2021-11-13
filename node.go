@@ -79,10 +79,10 @@ func OpGlobal(op []Option) Option {
 
 func opG(src *decoderOptions) Option { return func(o *decoderOptions) { o.global = src.global } }
 
-// Option is a function pointer used to pass options to Decode method
+// Option is the function pointer used to pass options to Decode method
 type Option func(*decoderOptions)
 
-// Node is a JSON AST node
+// Node is the JSON AST node
 type Node interface {
 	// Type returns Node type name: "number", "string", "object", "array", "boolean" or "null"
 	Type() string
@@ -93,6 +93,11 @@ type Node interface {
 		String() string
 		WriteTo(w io.Writer) (int64, error)
 	*/
+}
+
+// JSONDecoder is the interface implemented by types that can decode a JSON description of themselves.
+type JSONDecoder interface {
+	DecodeJSON(node Node) error
 }
 
 // Num represents numeric node
@@ -443,6 +448,7 @@ var (
 	objectType          = reflect.MapOf(stringType, emptyType)
 	arrayType           = reflect.SliceOf(emptyType)
 	optionsType         = reflect.SliceOf(reflect.TypeOf((*Option)(nil)).Elem())
+	decoderType         = reflect.TypeOf((*JSONDecoder)(nil)).Elem()
 )
 
 type decodeFunc func(out reflect.Value) error
@@ -471,48 +477,57 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 		out = out.Elem()
 	}
 
+	// concrete type
 	if out.Kind() != reflect.Interface {
-		if err := decode(out); err != nil {
-			return err
-		}
-	} else {
-		if out.Type() == nodeType {
-			// special case
-			out.Set(reflect.ValueOf(node))
-		} else {
-			v, err := opt.g().types().call(out.Type(), node, op)
-			if err != nil {
+		if reflect.PtrTo(out.Type()).Implements(decoderType) && out.CanAddr() {
+			dec := out.Addr().Interface().(JSONDecoder)
+			if err := dec.DecodeJSON(node); err != nil {
 				return fmt.Errorf("jtree: %w", err)
 			}
-			if v.IsValid() {
-				out.Set(v)
-			} else {
-				// allocate default type
-				var dst reflect.Value
-				switch node.(type) {
-				case *Num:
-					dst = reflect.New(float64Type).Elem()
-				case String:
-					dst = reflect.New(stringType).Elem()
-				case *Object:
-					dst = reflect.New(objectType).Elem()
-				case Array:
-					dst = reflect.New(arrayType).Elem()
-				case Bool:
-					dst = reflect.New(boolType).Elem()
-				default:
-					panic("unknown node")
-				}
-				if err := decode(dst); err != nil {
-					return err
-				}
-				if !dst.CanConvert(out.Type()) {
-					return fmt.Errorf("jtree: can't convert %v to %v", dst.Type(), out.Type())
-				}
-				out.Set(dst.Convert(out.Type()))
-			}
+			return nil
 		}
+		return decode(out)
 	}
+
+	if out.Type() == nodeType {
+		// special case
+		out.Set(reflect.ValueOf(node))
+		return nil
+	}
+
+	// user interface type
+	val, err := opt.g().types().call(out.Type(), node, op)
+	if err != nil {
+		return fmt.Errorf("jtree: %w", err)
+	}
+	if val.IsValid() {
+		out.Set(val)
+		return nil
+	}
+
+	// allocate default type
+	var dst reflect.Value
+	switch node.(type) {
+	case *Num:
+		dst = reflect.New(float64Type).Elem()
+	case String:
+		dst = reflect.New(stringType).Elem()
+	case *Object:
+		dst = reflect.New(objectType).Elem()
+	case Array:
+		dst = reflect.New(arrayType).Elem()
+	case Bool:
+		dst = reflect.New(boolType).Elem()
+	default:
+		panic("unknown node")
+	}
+	if err := decode(dst); err != nil {
+		return err
+	}
+	if !dst.CanConvert(out.Type()) {
+		return fmt.Errorf("jtree: can't convert %v to %v", dst.Type(), out.Type())
+	}
+	out.Set(dst.Convert(out.Type()))
 	return nil
 }
 

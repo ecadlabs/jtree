@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func newStr(s string) *string { return &s }
@@ -39,30 +38,128 @@ func newBigInt(s string) *big.Int {
 	return i
 }
 
-func TestString(t *testing.T) {
+func mkTime(s string) *time.Time {
+	var t time.Time
+	t.UnmarshalText([]byte(s))
+	return &t
+}
+
+func TestDecode(t *testing.T) {
+	objNode := Fields{
+		{"F0", (*Num)(big.NewFloat(1))},
+		{"f1", String("aaa")},
+		{"f2", String("bbb")},
+		{"f3", String("123")},
+		{"f4", String("ccc")},
+		{"S", (*Num)(big.NewFloat(2))},
+		{"ZZ", Null{}},
+		{"XX", (*Num)(big.NewFloat(3))},
+	}.NewObject()
+
+	objVal := &T0{
+		T1: T1{
+			F0: 0,
+			F2: "bbb",
+		},
+		F0: 1,
+		F1: "aaa",
+		T2: &T2{
+			F3: 123,
+			F4: "ccc",
+			S:  0,
+		},
+	}
+
 	tst := []struct {
-		n      String
+		n      Node
 		out    interface{}
 		expect interface{}
 		op     []Option
 		err    string
 	}{
-		{n: "aaa", out: new(string), expect: newStr("aaa")},
-		{n: "aaa", out: new(*string), expect: newStrP("aaa")},
-		{n: "aaa", out: new([]byte), expect: newBytes("aaa"), op: []Option{OpString}},
-		{n: "YWFh", out: new([]byte), expect: newBytes("aaa")},
-		{n: "YWFh", out: new(string), expect: newStr("aaa"), op: []Option{OpEncoding(Base64)}},
-		{n: "616161", out: new([]byte), expect: newBytes("aaa"), op: []Option{OpEncoding(Hex)}},
-		{n: "aaa", out: new(Node), expect: newNode(String("aaa"))},
-		{n: "123", out: new(int), expect: newInt(123), op: []Option{OpString}},
-		{n: "123", out: new(*int), expect: newIntP(123), op: []Option{OpString}},
-		{n: "123", out: new(int), err: "jtree: can't convert string to int"},
-		{n: "123", out: new(uint), expect: newUint(123), op: []Option{OpString}},
-		{n: "123", out: new(big.Int), expect: big.NewInt(123)},
-		{n: "123", out: new(big.Float), expect: newBigFloat("123")},
-		{n: "true", out: new(bool), expect: newBool(true), op: []Option{OpString}},
-		{n: "true", out: new(bool), err: "jtree: can't convert string to bool"},
-		{n: "zzz", out: new(bool), op: []Option{OpString}, err: "jtree: strconv.ParseBool: parsing \"zzz\": invalid syntax"},
+		{n: String("aaa"), out: new(string), expect: newStr("aaa")},
+		{n: String("aaa"), out: new(*string), expect: newStrP("aaa")},
+		{n: String("aaa"), out: new([]byte), expect: newBytes("aaa"), op: []Option{OpString}},
+		{n: String("YWFh"), out: new([]byte), expect: newBytes("aaa")},
+		{n: String("YWFh"), out: new(string), expect: newStr("aaa"), op: []Option{OpEncoding(Base64)}},
+		{n: String("616161"), out: new([]byte), expect: newBytes("aaa"), op: []Option{OpEncoding(Hex)}},
+		{n: String("aaa"), out: new(Node), expect: newNode(String("aaa"))},
+		{n: String("123"), out: new(int), expect: newInt(123), op: []Option{OpString}},
+		{n: String("123"), out: new(*int), expect: newIntP(123), op: []Option{OpString}},
+		{n: String("123"), out: new(int), err: "jtree: can't convert string to int"},
+		{n: String("123"), out: new(uint), expect: newUint(123), op: []Option{OpString}},
+		{n: String("123"), out: new(big.Int), expect: big.NewInt(123)},
+		{n: String("123"), out: new(big.Float), expect: newBigFloat("123")},
+		{n: String("true"), out: new(bool), expect: newBool(true), op: []Option{OpString}},
+		{n: String("true"), out: new(bool), err: "jtree: can't convert string to bool"},
+		{n: String("zzz"), out: new(bool), op: []Option{OpString}, err: "jtree: strconv.ParseBool: parsing \"zzz\": invalid syntax"},
+		{n: String("yep"), out: new(CanDecode), expect: (*CanDecode)(newInt(1))},
+		{n: String("nope"), out: new(CanDecode), expect: (*CanDecode)(newInt(0))},
+		{n: String("maybe"), out: new(CanDecode), expect: (*CanDecode)(newInt(-1))},
+		{n: String("whaaat"), out: new(CanDecode), err: "jtree: unknown string: whaaat"},
+		{n: newNumNode("123"), out: new(int), expect: newInt(123)},
+		{n: newNumNode("123"), out: new(*int), expect: newIntP(123)},
+		{n: newNumNode("123"), out: new(uint), expect: newUint(123)},
+		{n: newNumNode("123"), out: new(string), expect: newStr("123")},
+		{n: newNumNode("123"), out: new(float64), expect: newFloat64(123)},
+		{n: newNumNode("123"), out: new(big.Float), expect: newBigFloat("123")},
+		{n: newNumNode("123"), out: new(big.Int), expect: newBigInt("123")},
+		{n: newNumNode("1"), out: new(bool), expect: newBool(true)},
+		{n: newNumNode("0"), out: new(bool), expect: newBool(false)},
+
+		{n: String("2021-11-11T15:08:52.537Z"), out: new(time.Time), expect: mkTime("2021-11-11T15:08:52.537Z")},
+		{n: newNumNode("1636643332"), out: new(time.Time), expect: mkTime("2021-11-11T15:08:52Z")},
+
+		{n: Null{}, out: newInt(123), expect: newInt(0)},
+		{n: Null{}, out: newIntP(120), expect: new(*int)},
+		{n: Null{}, out: new(interface{}), expect: new(interface{})},
+
+		{n: Array{String("aaa"), String("bbb")}, out: new([]string), expect: &[]string{"aaa", "bbb"}},
+		{n: Array{String("aaa"), String("bbb")}, out: new([3]string), expect: &[3]string{"aaa", "bbb"}},
+		{n: Array{String("aaa"), String("bbb")}, out: new([1]string), expect: &[1]string{"aaa"}},
+
+		{
+			n: Fields{
+				{"f0", (*Num)(big.NewFloat(1))},
+				{"f1", String("aaa")},
+				{"f2", String("ccc")},
+			}.NewObject(),
+			out: new(map[string]interface{}),
+			expect: &(map[string]interface{}{
+				"f0": float64(1),
+				"f1": "aaa",
+				"f2": "ccc",
+			}),
+		},
+		{
+			n: Fields{
+				{"f0", (*Num)(big.NewFloat(1))},
+				{"f1", (*Num)(big.NewFloat(2))},
+				{"f2", (*Num)(big.NewFloat(3))},
+			}.NewObject(),
+			out: new(map[string]int),
+			expect: &(map[string]int{
+				"f0": 1,
+				"f1": 2,
+				"f2": 3,
+			}),
+		},
+		{
+			n:      objNode,
+			out:    new(T0),
+			expect: objVal,
+		},
+		{
+			n:      objNode,
+			out:    new(*T0),
+			expect: &objVal,
+		},
+		{
+			n:   objNode,
+			out: new(T0),
+			err: "jtree: undefined field 'S': jtree.T0",
+			op:  []Option{OpDisallowUnknownFields},
+		},
 	}
 	for _, tt := range tst {
 		err := tt.n.Decode(tt.out, tt.op...)
@@ -74,75 +171,14 @@ func TestString(t *testing.T) {
 	}
 }
 
-func TestTextUnmarshaler(t *testing.T) {
-	var v time.Time
-	require.NoError(t, String("2021-11-11T15:08:52.537Z").Decode(&v))
-	var expect time.Time
-	expect.UnmarshalText([]byte("2021-11-11T15:08:52.537Z"))
-	require.Equal(t, expect, v)
-}
-
-func TestNum(t *testing.T) {
-	tst := []struct {
-		n      *Num
-		out    interface{}
-		expect interface{}
-	}{
-		{n: newNumNode("123"), out: new(int), expect: newInt(123)},
-		{n: newNumNode("123"), out: new(*int), expect: newIntP(123)},
-		{n: newNumNode("123"), out: new(uint), expect: newUint(123)},
-		{n: newNumNode("123"), out: new(string), expect: newStr("123")},
-		{n: newNumNode("123"), out: new(float64), expect: newFloat64(123)},
-		{n: newNumNode("123"), out: new(big.Float), expect: newBigFloat("123")},
-		{n: newNumNode("123"), out: new(big.Int), expect: newBigInt("123")},
-		{n: newNumNode("1"), out: new(bool), expect: newBool(true)},
-		{n: newNumNode("0"), out: new(bool), expect: newBool(false)},
-	}
-	for _, tt := range tst {
-		if assert.NoError(t, tt.n.Decode(tt.out)) {
-			assert.Equal(t, tt.expect, tt.out)
-		}
-	}
-}
-
-func TestNumToTime(t *testing.T) {
-	var v time.Time
-	require.NoError(t, (*Num)(big.NewFloat(1636643332)).Decode(&v))
-	var expect time.Time
-	expect.UnmarshalText([]byte("2021-11-11T15:08:52Z"))
-	require.Equal(t, expect, v)
-}
-
-func TestNull(t *testing.T) {
-	tst := []struct {
-		out    interface{}
-		expect interface{}
-	}{
-		{out: newInt(123), expect: newInt(0)},
-		{out: newIntP(120), expect: new(*int)},
-		{out: new(interface{}), expect: new(interface{})},
-	}
-	for _, tt := range tst {
-		if assert.NoError(t, Null{}.Decode(tt.out)) {
-			assert.Equal(t, tt.expect, tt.out)
-		}
-	}
-}
-
-func TestNullify(t *testing.T) {
-	var i int
-	ptr := &i
-	require.NoError(t, Null{}.Decode(&ptr))
-	require.Nil(t, ptr)
-}
-
-func TestDefault(t *testing.T) {
+func TestInterface(t *testing.T) {
 	tst := []struct {
 		n      Node
 		expect interface{}
 	}{
 		{n: newNumNode("123"), expect: float64(123)},
 		{n: String("aaa"), expect: "aaa"},
+		{n: Array{String("aaa"), String("bbb")}, expect: []interface{}{"aaa", "bbb"}},
 	}
 	for _, tt := range tst {
 		var dest interface{}
@@ -150,30 +186,6 @@ func TestDefault(t *testing.T) {
 			assert.Equal(t, tt.expect, dest)
 		}
 	}
-}
-
-func TestArray(t *testing.T) {
-	tst := []struct {
-		n      Array
-		out    interface{}
-		expect interface{}
-	}{
-		{n: Array{String("aaa"), String("bbb")}, out: new([]string), expect: &[]string{"aaa", "bbb"}},
-		{n: Array{String("aaa"), String("bbb")}, out: new([3]string), expect: &[3]string{"aaa", "bbb"}},
-		{n: Array{String("aaa"), String("bbb")}, out: new([1]string), expect: &[1]string{"aaa"}},
-	}
-	for _, tt := range tst {
-		if assert.NoError(t, tt.n.Decode(tt.out)) {
-			assert.Equal(t, tt.expect, tt.out)
-		}
-	}
-}
-
-func TestArrayDefault(t *testing.T) {
-	src := Array{String("aaa"), String("bbb")}
-	var v interface{}
-	require.NoError(t, src.Decode(&v))
-	require.Equal(t, []interface{}{"aaa", "bbb"}, v)
 }
 
 type T0 struct {
@@ -201,92 +213,6 @@ type unexported struct {
 	XX int
 }
 
-func TestObject(t *testing.T) {
-	src := Fields{
-		{"F0", (*Num)(big.NewFloat(1))},
-		{"f1", String("aaa")},
-		{"f2", String("bbb")},
-		{"f3", String("123")},
-		{"f4", String("ccc")},
-		{"S", (*Num)(big.NewFloat(2))},
-		{"ZZ", Null{}},
-		{"XX", (*Num)(big.NewFloat(3))},
-	}
-	expect := T0{
-		T1: T1{
-			F0: 0,
-			F2: "bbb",
-		},
-		F0: 1,
-		F1: "aaa",
-		T2: &T2{
-			F3: 123,
-			F4: "ccc",
-			S:  0,
-		},
-	}
-	var dst0 T0
-	if assert.NoError(t, src.NewObject().Decode(&dst0)) {
-		assert.Equal(t, expect, dst0)
-	}
-	var dst1 T0
-	err := src.NewObject().Decode(&dst1, OpDisallowUnknownFields)
-	assert.EqualError(t, err, "jtree: undefined field 'S': jtree.T0")
-
-	var dst2 *T0
-	if assert.NoError(t, src.NewObject().Decode(&dst2)) {
-		assert.Equal(t, &expect, dst2)
-	}
-}
-
-func TestMapInterface(t *testing.T) {
-	src := Fields{
-		{"f0", (*Num)(big.NewFloat(1))},
-		{"f1", String("aaa")},
-		{"f2", String("ccc")},
-	}
-	var dst0 map[string]interface{}
-	if assert.NoError(t, src.NewObject().Decode(&dst0)) {
-		assert.Equal(t, map[string]interface{}{
-			"f0": float64(1),
-			"f1": "aaa",
-			"f2": "ccc",
-		}, dst0)
-	}
-}
-
-func TestMapInt(t *testing.T) {
-	src := Fields{
-		{"f0", (*Num)(big.NewFloat(1))},
-		{"f1", (*Num)(big.NewFloat(2))},
-		{"f2", (*Num)(big.NewFloat(3))},
-	}
-	var dst0 map[string]int
-	if assert.NoError(t, src.NewObject().Decode(&dst0)) {
-		assert.Equal(t, map[string]int{
-			"f0": 1,
-			"f1": 2,
-			"f2": 3,
-		}, dst0)
-	}
-}
-
-func TestMapDefault(t *testing.T) {
-	src := Fields{
-		{"f0", (*Num)(big.NewFloat(1))},
-		{"f1", (*Num)(big.NewFloat(2))},
-		{"f2", (*Num)(big.NewFloat(3))},
-	}
-	var dst0 interface{}
-	if assert.NoError(t, src.NewObject().Decode(&dst0)) {
-		assert.Equal(t, map[string]interface{}{
-			"f0": float64(1),
-			"f1": float64(2),
-			"f2": float64(3),
-		}, dst0)
-	}
-}
-
 type UserType interface {
 	ImplKind() string
 }
@@ -305,51 +231,86 @@ type UserTypeStr struct {
 
 func (u *UserTypeStr) ImplKind() string { return "str" }
 
+func UserTypeFunc(n Node, op []Option) (UserType, error) {
+	obj, ok := n.(*Object)
+	if !ok {
+		return nil, errors.New("not an object")
+	}
+	kind, ok := obj.FieldByName("kind").(String)
+	if !ok {
+		return nil, errors.New("malformed object")
+	}
+	var dest UserType
+	switch kind {
+	case "int":
+		dest = &UserTypeInt{}
+	case "str":
+		dest = &UserTypeStr{}
+	default:
+		return nil, fmt.Errorf("unknown kind '%s'", string(kind))
+	}
+	return dest, n.Decode(dest, OpGlobal(op))
+}
+
 func TestUserType(t *testing.T) {
-	fn := func(n Node, op []Option) (UserType, error) {
-		obj, ok := n.(*Object)
-		if !ok {
-			return nil, errors.New("not an object")
-		}
-		kind, ok := obj.FieldByName("kind").(String)
-		if !ok {
-			return nil, errors.New("malformed object")
-		}
-		var dest UserType
-		switch kind {
-		case "int":
-			dest = &UserTypeInt{}
-		case "str":
-			dest = &UserTypeStr{}
-		default:
-			return nil, fmt.Errorf("unknown kind '%s'", string(kind))
-		}
-		return dest, n.Decode(dest, OpGlobal(op))
+	tst := []struct {
+		n      Node
+		out    *UserType
+		expect UserType
+		err    string
+	}{
+		{
+			n: Fields{
+				{"kind", String("int")},
+				{"int", (*Num)(big.NewFloat(1))},
+			}.NewObject(),
+			out: new(UserType),
+			expect: &UserTypeInt{
+				Kind: "int",
+				Int:  1,
+			},
+		},
+		{
+			n: Fields{
+				{"kind", String("str")},
+				{"str", String("aaa")},
+			}.NewObject(),
+			out: new(UserType),
+			expect: &UserTypeStr{
+				Kind: "str",
+				Str:  "aaa",
+			},
+		},
 	}
+
 	reg := NewTypeRegistry()
-	reg.RegisterType(fn)
+	reg.RegisterType(UserTypeFunc)
 
-	var dest0 UserType
-	src0 := Fields{
-		{"kind", String("int")},
-		{"int", (*Num)(big.NewFloat(1))},
+	for _, tt := range tst {
+		err := tt.n.Decode(tt.out, OpTypes(reg))
+		if tt.err != "" {
+			assert.EqualError(t, err, tt.err)
+		} else if assert.NoError(t, err) {
+			assert.Equal(t, &tt.expect, tt.out)
+		}
 	}
-	if assert.NoError(t, src0.NewObject().Decode(&dest0, OpTypes(reg))) {
-		assert.Equal(t, &UserTypeInt{
-			Kind: "int",
-			Int:  1,
-		}, dest0)
-	}
+}
 
-	var dest1 UserType
-	src1 := Fields{
-		{"kind", String("str")},
-		{"str", String("aaa")},
+type CanDecode int
+
+func (c *CanDecode) DecodeJSON(node Node) error {
+	if s, ok := node.(String); ok {
+		switch s {
+		case "nope":
+			*c = 0
+		case "yep":
+			*c = 1
+		case "maybe":
+			*c = -1
+		default:
+			return fmt.Errorf("unknown string: %s", s)
+		}
+		return nil
 	}
-	if assert.NoError(t, src1.NewObject().Decode(&dest1, OpTypes(reg))) {
-		assert.Equal(t, &UserTypeStr{
-			Kind: "str",
-			Str:  "aaa",
-		}, dest1)
-	}
+	return fmt.Errorf("string expected: %s", node.Type())
 }

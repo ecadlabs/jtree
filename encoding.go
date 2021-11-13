@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 )
 
-// Encoding is an interface used for string encoded binary values
+// Encoding is the interface used for string encoded binary values
 type Encoding interface {
 	Encode([]byte) []byte
 	Decode([]byte) ([]byte, error)
