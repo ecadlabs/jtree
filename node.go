@@ -31,20 +31,21 @@ func (g *globalOptions) encodings() *EncodingRegistry {
 	return defaultEncodingRegistry
 }
 
-type decoderOptions struct {
+type options struct {
 	str    bool
 	enc    Encoding
 	global *globalOptions
+	elem   *options
 }
 
-func (o *decoderOptions) apply(opts []Option) *decoderOptions {
+func (o *options) apply(opts []Option) *options {
 	for _, fn := range opts {
 		fn(o)
 	}
 	return o
 }
 
-func (o *decoderOptions) g() *globalOptions {
+func (o *options) g() *globalOptions {
 	if o.global != nil {
 		return o.global
 	}
@@ -54,33 +55,49 @@ func (o *decoderOptions) g() *globalOptions {
 
 // OpString makes the numeric value to be encoded/decoded as a string and the byte slice value
 // to be converted to a string as is (skips the binary encoding scheme)
-func OpString(o *decoderOptions) { o.str = true }
+func OpString(o *options) { o.str = true }
 
 // OpEncoding specifies the binary encoding scheme used for byte slices. Without this option base64 scheme will be used
-func OpEncoding(e Encoding) Option { return func(o *decoderOptions) { o.enc = e } }
+func OpEncoding(e Encoding) Option { return func(o *options) { o.enc = e } }
 
 // OpTypes provides custom user type registry. The option is global for all Decode calls in chain
-func OpTypes(r *TypeRegistry) Option { return func(o *decoderOptions) { o.g().typeReg = r } }
+func OpTypes(r *TypeRegistry) Option { return func(o *options) { o.g().typeReg = r } }
 
 // OpEncodings provides custom user encodings registry. The option is global for all Decode calls in chain
-func OpEncodings(e *EncodingRegistry) Option { return func(o *decoderOptions) { o.g().encReg = e } }
+func OpEncodings(e *EncodingRegistry) Option { return func(o *options) { o.g().encReg = e } }
 
 // OpDisallowUnknownFields causes the Decode method to return an error when the destination is a struct
 // and the input contains object keys which do not match any non-ignored, exported fields in the destination.
-func OpDisallowUnknownFields(o *decoderOptions) { o.g().noUnknown = true }
+func OpDisallowUnknownFields(o *options) { o.g().noUnknown = true }
+
+// OpElem passes options to container elements
+func OpElem(op ...Option) Option {
+	return func(o *options) {
+		if o.elem == nil {
+			o.elem = new(options)
+		}
+		o.elem.apply(op)
+	}
+}
 
 // OpGlobal passes global options to subsequent Decode calls. Used in custom decoders
 func OpGlobal(op []Option) Option {
-	return func(o *decoderOptions) {
-		src := new(decoderOptions).apply(op)
+	return func(o *options) {
+		src := new(options).apply(op)
 		o.global = src.global
 	}
 }
 
-func opG(src *decoderOptions) Option { return func(o *decoderOptions) { o.global = src.global } }
+func opGlobal(src *options) Option { return func(o *options) { o.global = src.global } }
+func opInit(src *options) Option {
+	return func(o *options) {
+		*o = *src
+		o.elem = nil
+	}
+}
 
 // Option is the function pointer used to pass options to Decode method
-type Option func(*decoderOptions)
+type Option func(*options)
 
 // Node is the JSON AST node
 type Node interface {
@@ -161,7 +178,7 @@ func (String) Type() string { return "string" }
 
 // Decode decodes the node into the value pointed by v
 func (s String) Decode(v interface{}, op ...Option) error {
-	opt := new(decoderOptions).apply(op)
+	opt := new(options).apply(op)
 	fn := func(out reflect.Value) error {
 		t := out.Type()
 		switch {
@@ -297,7 +314,7 @@ func (o *Object) NumField() int {
 
 // Decode decodes the node into the value pointed by v
 func (o *Object) Decode(v interface{}, op ...Option) error {
-	opt := new(decoderOptions).apply(op)
+	opt := new(options).apply(op)
 	fn := func(out reflect.Value) error {
 		t := out.Type()
 		switch t.Kind() {
@@ -325,7 +342,7 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 					}
 				}
 				fopt := parseFieldOptions(field.opt, opt)
-				if err := elem.Decode(dest.Addr().Interface(), append([]Option{opG(opt)}, fopt...)...); err != nil {
+				if err := elem.Decode(dest.Addr().Interface(), mkChildOptions(opt, fopt)...); err != nil {
 					return err
 				}
 			}
@@ -340,7 +357,7 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 					return err
 				}
 				elemVal := reflect.New(t.Elem())
-				if err := elem.Decode(elemVal.Interface(), opG(opt)); err != nil {
+				if err := elem.Decode(elemVal.Interface(), mkChildOptions(opt, nil)...); err != nil {
 					return err
 				}
 				dst.SetMapIndex(keyVal.Elem(), elemVal.Elem())
@@ -363,7 +380,7 @@ func (Array) Type() string { return "array" }
 
 // Decode decodes the node into the value pointed by v
 func (a Array) Decode(v interface{}, op ...Option) error {
-	opt := new(decoderOptions).apply(op)
+	opt := new(options).apply(op)
 	fn := func(out reflect.Value) error {
 		var dst reflect.Value
 		switch out.Kind() {
@@ -378,7 +395,7 @@ func (a Array) Decode(v interface{}, op ...Option) error {
 			if i == dst.Len() {
 				break
 			}
-			if err := elem.Decode(dst.Index(i).Addr().Interface(), opG(opt)); err != nil {
+			if err := elem.Decode(dst.Index(i).Addr().Interface(), mkChildOptions(opt, nil)...); err != nil {
 				return err
 			}
 		}
@@ -454,7 +471,7 @@ var (
 type decodeFunc func(out reflect.Value) error
 
 func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error {
-	opt := new(decoderOptions).apply(op)
+	opt := new(options).apply(op)
 	val := reflect.ValueOf(v)
 	if val.Kind() != reflect.Ptr {
 		return fmt.Errorf("jtree: pointer expected: %v", val.Type())
@@ -536,16 +553,40 @@ func parseTag(tag string) (name string, opt []string) {
 	return s[0], s[1:]
 }
 
-func parseFieldOptions(tags []string, opt *decoderOptions) []Option {
-	o := make([]Option, 0)
+func parseFieldOptions(tags []string, opt *options) []Option {
+	out := make([]Option, 0, len(tags))
+	elemOp := make([]Option, 0, len(tags))
 	for _, s := range tags {
+		if len(s) == 0 {
+			continue
+		}
+		elem := false
+		if s[0] == '[' {
+			if s[len(s)-1] != ']' {
+				continue
+			}
+			s = s[1 : len(s)-1]
+			elem = true
+		}
+		var o Option
 		if s == "string" {
-			o = append(o, OpString)
+			o = OpString
 		} else if enc := opt.g().encodings().get(s); enc != nil {
-			o = append(o, OpEncoding(enc))
+			o = OpEncoding(enc)
+		} else {
+			continue
+		}
+		if elem {
+			elemOp = append(elemOp, o)
+			elem = false
+		} else {
+			out = append(out, o)
 		}
 	}
-	return o
+	if len(elemOp) != 0 {
+		out = append(out, OpElem(elemOp...))
+	}
+	return out
 }
 
 type structField struct {
@@ -605,4 +646,13 @@ func collectFields(t reflect.Type, index []int, ptr []reflect.Type, out map[stri
 			}
 		}
 	}
+}
+
+func mkChildOptions(opt *options, fopt []Option) []Option {
+	out := make([]Option, 0, len(fopt)+2)
+	if opt.elem != nil {
+		out = append(out, opInit(opt.elem))
+	}
+	out = append(out, opGlobal(opt))
+	return append(out, fopt...)
 }

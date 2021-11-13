@@ -55,6 +55,7 @@ func TestDecode(t *testing.T) {
 		{"S", (*jtree.Num)(big.NewFloat(2))},
 		{"ZZ", jtree.Null{}},
 		{"XX", (*jtree.Num)(big.NewFloat(3))},
+		{"QQ", jtree.Array{jtree.String("123"), jtree.String("456")}},
 	}.NewObject()
 
 	objVal := &T0{
@@ -69,6 +70,7 @@ func TestDecode(t *testing.T) {
 			F4: "ccc",
 			S:  0,
 		},
+		QQ: []int{123, 456},
 	}
 
 	tst := []struct {
@@ -118,6 +120,8 @@ func TestDecode(t *testing.T) {
 		{n: jtree.Array{jtree.String("aaa"), jtree.String("bbb")}, out: new([]string), expect: &[]string{"aaa", "bbb"}},
 		{n: jtree.Array{jtree.String("aaa"), jtree.String("bbb")}, out: new([3]string), expect: &[3]string{"aaa", "bbb"}},
 		{n: jtree.Array{jtree.String("aaa"), jtree.String("bbb")}, out: new([1]string), expect: &[1]string{"aaa"}},
+
+		{n: jtree.Array{jtree.String("123"), jtree.String("456")}, out: new([]int), expect: &[]int{123, 456}, op: []jtree.Option{jtree.OpElem(jtree.OpString)}},
 
 		{
 			n: jtree.Fields{
@@ -196,6 +200,7 @@ type T0 struct {
 	*T2
 	FF *string
 	*unexported
+	QQ []int `json:",[string]"`
 }
 
 type T1 struct {
