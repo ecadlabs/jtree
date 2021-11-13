@@ -19,6 +19,8 @@ func NewTypeRegistry() *TypeRegistry {
 	}
 }
 
+var ctxType = reflect.TypeOf((*Context)(nil))
+
 // RegisterType registers user interface type. The argument is a constructor function of type `func(Node, []Option) (UserType, error)`.
 // It panics if any other type is passed
 func (r *TypeRegistry) RegisterType(fn interface{}) {
@@ -26,7 +28,7 @@ func (r *TypeRegistry) RegisterType(fn interface{}) {
 	if ft.Kind() != reflect.Func {
 		panic(fmt.Sprintf("jtree: function expected: %v", ft))
 	}
-	if ft.NumIn() != 2 || ft.In(0) != nodeType || ft.In(1) != optionsType || ft.NumOut() != 2 || ft.Out(1) != errorType {
+	if ft.NumIn() != 2 || ft.In(0) != nodeType || ft.In(1) != ctxType || ft.NumOut() != 2 || ft.Out(1) != errorType {
 		panic(fmt.Sprintf("jtree: invalid signature: %v", ft))
 	}
 	t := ft.Out(0)
@@ -41,14 +43,14 @@ func (r *TypeRegistry) RegisterType(fn interface{}) {
 	r.types[t] = fn
 }
 
-func (r *TypeRegistry) call(t reflect.Type, n Node, op []Option) (reflect.Value, error) {
+func (r *TypeRegistry) call(t reflect.Type, n Node, ctx *Context) (reflect.Value, error) {
 	r.mtx.RLock()
 	f, ok := r.types[t]
 	r.mtx.RUnlock()
 	if !ok {
 		return reflect.Value{}, nil
 	}
-	out := reflect.ValueOf(f).Call([]reflect.Value{reflect.ValueOf(n), reflect.ValueOf(op)})
+	out := reflect.ValueOf(f).Call([]reflect.Value{reflect.ValueOf(n), reflect.ValueOf(ctx)})
 	if !out[1].IsNil() {
 		return reflect.Value{}, out[1].Interface().(error)
 	}

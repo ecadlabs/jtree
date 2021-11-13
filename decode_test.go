@@ -237,7 +237,7 @@ type userTypeStr struct {
 
 func (u *userTypeStr) ImplKind() string { return "str" }
 
-func userTypeFunc(n jtree.Node, op []jtree.Option) (userType, error) {
+func userTypeFunc(n jtree.Node, ctx *jtree.Context) (userType, error) {
 	obj, ok := n.(*jtree.Object)
 	if !ok {
 		return nil, errors.New("not an object")
@@ -255,7 +255,7 @@ func userTypeFunc(n jtree.Node, op []jtree.Option) (userType, error) {
 	default:
 		return nil, fmt.Errorf("unknown kind '%s'", string(kind))
 	}
-	return dest, n.Decode(dest, jtree.OpGlobal(op))
+	return dest, n.Decode(dest, jtree.OpCtx(ctx))
 }
 
 func TestUserType(t *testing.T) {

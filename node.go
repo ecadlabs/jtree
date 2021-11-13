@@ -11,31 +11,32 @@ import (
 	"time"
 )
 
-type globalOptions struct {
+// Context stores global options
+type Context struct {
 	noUnknown bool
 	typeReg   *TypeRegistry
 	encReg    *EncodingRegistry
 }
 
-func (g *globalOptions) types() *TypeRegistry {
-	if g.typeReg != nil {
-		return g.typeReg
+func (c *Context) types() *TypeRegistry {
+	if c.typeReg != nil {
+		return c.typeReg
 	}
 	return defaultTypeRegistry
 }
 
-func (g *globalOptions) encodings() *EncodingRegistry {
-	if g.encReg != nil {
-		return g.encReg
+func (c *Context) encodings() *EncodingRegistry {
+	if c.encReg != nil {
+		return c.encReg
 	}
 	return defaultEncodingRegistry
 }
 
 type options struct {
-	str    bool
-	enc    Encoding
-	global *globalOptions
-	elem   *options
+	context *Context
+	str     bool
+	enc     Encoding
+	elem    *options
 }
 
 func (o *options) apply(opts []Option) *options {
@@ -45,12 +46,12 @@ func (o *options) apply(opts []Option) *options {
 	return o
 }
 
-func (o *options) g() *globalOptions {
-	if o.global != nil {
-		return o.global
+func (o *options) ctx() *Context {
+	if o.context != nil {
+		return o.context
 	}
-	o.global = new(globalOptions)
-	return o.global
+	o.context = new(Context)
+	return o.context
 }
 
 // OpString makes the numeric value to be encoded/decoded as a string and the byte slice value
@@ -61,14 +62,14 @@ func OpString(o *options) { o.str = true }
 func OpEncoding(e Encoding) Option { return func(o *options) { o.enc = e } }
 
 // OpTypes provides custom user type registry. The option is global for all Decode calls in chain
-func OpTypes(r *TypeRegistry) Option { return func(o *options) { o.g().typeReg = r } }
+func OpTypes(r *TypeRegistry) Option { return func(o *options) { o.ctx().typeReg = r } }
 
 // OpEncodings provides custom user encodings registry. The option is global for all Decode calls in chain
-func OpEncodings(e *EncodingRegistry) Option { return func(o *options) { o.g().encReg = e } }
+func OpEncodings(e *EncodingRegistry) Option { return func(o *options) { o.ctx().encReg = e } }
 
 // OpDisallowUnknownFields causes the Decode method to return an error when the destination is a struct
 // and the input contains object keys which do not match any non-ignored, exported fields in the destination.
-func OpDisallowUnknownFields(o *options) { o.g().noUnknown = true }
+func OpDisallowUnknownFields(o *options) { o.ctx().noUnknown = true }
 
 // OpElem passes options to container elements
 func OpElem(op ...Option) Option {
@@ -80,15 +81,9 @@ func OpElem(op ...Option) Option {
 	}
 }
 
-// OpGlobal passes global options to subsequent Decode calls. Used in custom decoders
-func OpGlobal(op []Option) Option {
-	return func(o *options) {
-		src := new(options).apply(op)
-		o.global = src.global
-	}
-}
+// OpCtx passes global options to subsequent Decode calls. Used in custom decoders
+func OpCtx(ctx *Context) Option { return func(o *options) { o.context = ctx } }
 
-func opGlobal(src *options) Option { return func(o *options) { o.global = src.global } }
 func opInit(src *options) Option {
 	return func(o *options) {
 		*o = *src
@@ -125,7 +120,7 @@ func (*Num) Type() string { return "number" }
 
 // Decode decodes the node into the value pointed by v
 func (n *Num) Decode(v interface{}, op ...Option) error {
-	fn := func(out reflect.Value) error {
+	fn := func(out reflect.Value, opt *options) error {
 		switch out.Type() {
 		case bigIntType:
 			i, _ := (*big.Float)(n).Int(nil)
@@ -178,8 +173,7 @@ func (String) Type() string { return "string" }
 
 // Decode decodes the node into the value pointed by v
 func (s String) Decode(v interface{}, op ...Option) error {
-	opt := new(options).apply(op)
-	fn := func(out reflect.Value) error {
+	fn := func(out reflect.Value, opt *options) error {
 		t := out.Type()
 		switch {
 		case reflect.PtrTo(t).Implements(textUnmarshalerType) && out.CanAddr():
@@ -314,8 +308,7 @@ func (o *Object) NumField() int {
 
 // Decode decodes the node into the value pointed by v
 func (o *Object) Decode(v interface{}, op ...Option) error {
-	opt := new(options).apply(op)
-	fn := func(out reflect.Value) error {
+	fn := func(out reflect.Value, opt *options) error {
 		t := out.Type()
 		switch t.Kind() {
 		case reflect.Struct:
@@ -325,7 +318,7 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 				key, elem := o.Field(i)
 				field, ok := fields[key]
 				if !ok {
-					if opt.g().noUnknown {
+					if opt.ctx().noUnknown {
 						return fmt.Errorf("jtree: undefined field '%s': %v", key, out.Type())
 					}
 					continue
@@ -380,8 +373,7 @@ func (Array) Type() string { return "array" }
 
 // Decode decodes the node into the value pointed by v
 func (a Array) Decode(v interface{}, op ...Option) error {
-	opt := new(options).apply(op)
-	fn := func(out reflect.Value) error {
+	fn := func(out reflect.Value, opt *options) error {
 		var dst reflect.Value
 		switch out.Kind() {
 		case reflect.Slice:
@@ -415,7 +407,7 @@ func (Bool) Type() string { return "boolean" }
 
 // Decode decodes the node into the value pointed by v
 func (b Bool) Decode(v interface{}, op ...Option) error {
-	fn := func(out reflect.Value) error {
+	fn := func(out reflect.Value, opt *options) error {
 		k := out.Kind()
 		switch k {
 		case reflect.Bool:
@@ -464,11 +456,10 @@ var (
 	boolType            = reflect.TypeOf(false)
 	objectType          = reflect.MapOf(stringType, emptyType)
 	arrayType           = reflect.SliceOf(emptyType)
-	optionsType         = reflect.SliceOf(reflect.TypeOf((*Option)(nil)).Elem())
 	decoderType         = reflect.TypeOf((*JSONDecoder)(nil)).Elem()
 )
 
-type decodeFunc func(out reflect.Value) error
+type decodeFunc func(out reflect.Value, opt *options) error
 
 func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error {
 	opt := new(options).apply(op)
@@ -503,7 +494,7 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 			}
 			return nil
 		}
-		return decode(out)
+		return decode(out, opt)
 	}
 
 	if out.Type() == nodeType {
@@ -513,7 +504,7 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 	}
 
 	// user interface type
-	val, err := opt.g().types().call(out.Type(), node, op)
+	val, err := opt.ctx().types().call(out.Type(), node, opt.context)
 	if err != nil {
 		return fmt.Errorf("jtree: %w", err)
 	}
@@ -538,7 +529,7 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 	default:
 		panic("unknown node")
 	}
-	if err := decode(dst); err != nil {
+	if err := decode(dst, opt); err != nil {
 		return err
 	}
 	if !dst.CanConvert(out.Type()) {
@@ -571,7 +562,7 @@ func parseFieldOptions(tags []string, opt *options) []Option {
 		var o Option
 		if s == "string" {
 			o = OpString
-		} else if enc := opt.g().encodings().get(s); enc != nil {
+		} else if enc := opt.ctx().encodings().get(s); enc != nil {
 			o = OpEncoding(enc)
 		} else {
 			continue
@@ -653,6 +644,6 @@ func mkChildOptions(opt *options, fopt []Option) []Option {
 	if opt.elem != nil {
 		out = append(out, opInit(opt.elem))
 	}
-	out = append(out, opGlobal(opt))
+	out = append(out, OpCtx(opt.context))
 	return append(out, fopt...)
 }
