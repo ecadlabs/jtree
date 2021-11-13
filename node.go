@@ -139,7 +139,7 @@ func (n *Num) Decode(v interface{}, op ...Option) error {
 				i, _ := (*big.Float)(n).Int64()
 				out.SetInt(i)
 
-			case k >= reflect.Uint && k <= reflect.Uint64:
+			case k >= reflect.Uint && k <= reflect.Uintptr:
 				u, _ := (*big.Float)(n).Uint64()
 				out.SetUint(u)
 
@@ -172,15 +172,13 @@ func (s String) Decode(v interface{}, op ...Option) error {
 	fn := func(out reflect.Value) error {
 		t := out.Type()
 		switch {
-		case reflect.PtrTo(t).Implements(textUnmarshalerType):
-			src := reflect.New(t)
-			unmarshaler := src.Interface().(encoding.TextUnmarshaler)
+		case reflect.PtrTo(t).Implements(textUnmarshalerType) && out.CanAddr():
+			unmarshaler := out.Addr().Interface().(encoding.TextUnmarshaler)
 			if err := unmarshaler.UnmarshalText([]byte(s)); err != nil {
 				return fmt.Errorf("jtree: %w", err)
 			}
-			out.Set(src.Elem())
 
-		case t.Kind() == reflect.String || t.Kind() == reflect.Slice && (t.Elem().Kind() == reflect.Uint8 || t.Elem().Kind() == reflect.Int32):
+		case t.Kind() == reflect.String || t.Kind() == reflect.Slice && t.Elem().Kind() == reflect.Uint8:
 			var src reflect.Value
 			enc := opt.enc
 			if enc == nil && t.Kind() != reflect.String && !opt.str {
@@ -227,7 +225,7 @@ func (s String) Decode(v interface{}, op ...Option) error {
 				}
 				out.SetInt(i)
 
-			case k >= reflect.Uint && k <= reflect.Uint64:
+			case k >= reflect.Uint && k <= reflect.Uintptr:
 				i, err := strconv.ParseUint(string(s), 10, 64)
 				if err != nil {
 					return fmt.Errorf("jtree: %w", err)
@@ -258,8 +256,8 @@ type Object struct {
 func (*Object) Type() string { return "object" }
 
 type Field struct {
-	Name string
-	Node Node
+	Key   string
+	Value Node
 }
 
 type Fields []*Field
@@ -270,8 +268,8 @@ func (f Fields) NewObject() *Object {
 		values: make(map[string]Node, len(f)),
 	}
 	for i, n := range f {
-		object.keys[i] = n.Name
-		object.values[n.Name] = n.Node
+		object.keys[i] = n.Key
+		object.values[n.Key] = n.Value
 	}
 	return &object
 }
@@ -302,7 +300,7 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 		switch t.Kind() {
 		case reflect.Struct:
 			fields := make(map[string]*structField)
-			collectFields(t, nil, fields)
+			collectFields(t, nil, nil, fields)
 			for i := 0; i < o.NumField(); i++ {
 				key, elem := o.Field(i)
 				field, ok := fields[key]
@@ -313,10 +311,10 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 					continue
 				}
 				dest := out
-				for _, i := range field.Index {
-					// allocate nil anonymous fields
-					dest = dest.Field(i)
-					if dest.Kind() == reflect.Ptr {
+				for i, fi := range field.Index {
+					dest = dest.Field(fi)
+					if i < len(field.Index)-1 && dest.Kind() == reflect.Ptr {
+						// allocate anonymous fields
 						if dest.IsNil() {
 							dest.Set(reflect.New(dest.Type().Elem()))
 						}
@@ -330,18 +328,18 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 			return nil
 
 		case reflect.Map:
-			if t.Key().Kind() != reflect.String {
-				return fmt.Errorf("jtree: map key type must be string: %v", out.Type())
-			}
-			et := t.Elem()
 			dst := reflect.MakeMap(t)
 			for i := 0; i < o.NumField(); i++ {
 				key, elem := o.Field(i)
-				tmp := reflect.New(et)
-				if err := elem.Decode(tmp.Interface(), opG(opt)); err != nil {
+				keyVal := reflect.New(t.Key())
+				if err := String(key).Decode(keyVal.Interface(), OpString); err != nil {
 					return err
 				}
-				dst.SetMapIndex(reflect.ValueOf(key), tmp.Elem())
+				elemVal := reflect.New(t.Elem())
+				if err := elem.Decode(elemVal.Interface(), opG(opt)); err != nil {
+					return err
+				}
+				dst.SetMapIndex(keyVal.Elem(), elemVal.Elem())
 			}
 			out.Set(dst)
 			return nil
@@ -451,68 +449,61 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 		return errors.New("jtree: nil pointer")
 	}
 	out := val.Elem()
-	t := out.Type()
 	if _, ok := node.(Null); ok {
 		// special case
-		out.Set(reflect.Zero(t))
+		out.Set(reflect.Zero(out.Type()))
 		return nil
 	}
-	// dst is always non pointer
-	var dst reflect.Value
-	if t.Kind() == reflect.Ptr {
-		// allocate new value or reuse
+
+	// out must be a non pointer
+	for out.Kind() == reflect.Ptr {
 		if out.IsNil() {
-			dst = reflect.New(t.Elem()).Elem()
-		} else {
-			dst = out.Elem()
+			out.Set(reflect.New(out.Type().Elem()))
 		}
-	} else {
-		dst = out
+		out = out.Elem()
 	}
-	if dst.Kind() != reflect.Interface {
-		if err := decode(dst); err != nil {
+
+	if out.Kind() != reflect.Interface {
+		if err := decode(out); err != nil {
 			return err
 		}
 	} else {
-		if dst.Type() == nodeType {
+		if out.Type() == nodeType {
 			// special case
-			dst.Set(reflect.ValueOf(node))
+			out.Set(reflect.ValueOf(node))
 		} else {
-			v, err := opt.g().types().call(dst.Type(), node, op)
+			v, err := opt.g().types().call(out.Type(), node, op)
 			if err != nil {
 				return fmt.Errorf("jtree: %w", err)
 			}
 			if v.IsValid() {
-				dst.Set(v)
+				out.Set(v)
 			} else {
 				// allocate default type
-				var tmp reflect.Value
+				var dst reflect.Value
 				switch node.(type) {
 				case *Num:
-					tmp = reflect.New(float64Type).Elem()
+					dst = reflect.New(float64Type).Elem()
 				case String:
-					tmp = reflect.New(stringType).Elem()
+					dst = reflect.New(stringType).Elem()
 				case *Object:
-					tmp = reflect.New(objectType).Elem()
+					dst = reflect.New(objectType).Elem()
 				case Array:
-					tmp = reflect.New(arrayType).Elem()
+					dst = reflect.New(arrayType).Elem()
 				case Bool:
-					tmp = reflect.New(boolType).Elem()
+					dst = reflect.New(boolType).Elem()
 				default:
 					panic("unknown node")
 				}
-				if err := decode(tmp); err != nil {
+				if err := decode(dst); err != nil {
 					return err
 				}
-				if !tmp.CanConvert(dst.Type()) {
-					return fmt.Errorf("jtree: can't convert %v to %v", tmp.Type(), dst.Type())
+				if !dst.CanConvert(out.Type()) {
+					return fmt.Errorf("jtree: can't convert %v to %v", dst.Type(), out.Type())
 				}
-				dst.Set(tmp.Convert(dst.Type()))
+				out.Set(dst.Convert(out.Type()))
 			}
 		}
-	}
-	if out != dst {
-		out.Set(dst.Addr())
 	}
 	return nil
 }
@@ -536,23 +527,37 @@ type structField struct {
 	opt []Option
 }
 
-func collectFields(t reflect.Type, index []int, out map[string]*structField) {
+func mkIndex(a, b []int) []int {
+	cp := make([]int, len(a)+len(b))
+	copy(cp, a)
+	copy(cp[len(a):], b)
+	return cp
+}
+
+func collectFields(t reflect.Type, index []int, ptr []reflect.Type, out map[string]*structField) {
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		if !f.IsExported() {
-			continue
-		}
 		name, opt := parseTag(string(f.Tag.Get("json")))
 		if name == "-" {
 			continue
 		}
-		if name == "" && f.Anonymous && f.Type.Kind() == reflect.Struct || f.Type.Kind() == reflect.Ptr && f.Type.Elem().Kind() == reflect.Struct {
+		if name == "" && f.Anonymous && (f.Type.Kind() == reflect.Struct || f.Type.Kind() == reflect.Ptr && f.Type.Elem().Kind() == reflect.Struct) {
 			// dive
 			ft := f.Type
-			if f.Type.Kind() == reflect.Ptr {
+			if ft.Kind() == reflect.Ptr {
+				i := 0
+				for ; i < len(ptr) && ptr[i] != ft; i++ {
+				}
+				if i < len(ptr) {
+					// loop detected
+					continue
+				}
+				ptr = append(ptr, ft)
 				ft = f.Type.Elem()
 			}
-			collectFields(ft, append(append([]int(nil), index...), f.Index...), out)
+			collectFields(ft, mkIndex(index, f.Index), ptr, out)
+		} else if !f.IsExported() {
+			continue
 		} else {
 			if name == "" {
 				name = f.Name
@@ -564,7 +569,7 @@ func collectFields(t reflect.Type, index []int, out map[string]*structField) {
 				}
 			}
 			tmp := f
-			tmp.Index = append(append([]int(nil), index...), f.Index...)
+			tmp.Index = mkIndex(index, f.Index)
 			out[name] = &structField{
 				StructField: &tmp,
 				opt:         opt,

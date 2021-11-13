@@ -10,7 +10,7 @@ type Parser struct {
 	r *reader
 }
 
-func NewParser(r io.ByteReader) *Parser {
+func NewParser(r io.RuneReader) *Parser {
 	return &Parser{r: newReader(r)}
 }
 
@@ -23,20 +23,15 @@ func (p *Parser) parseArray() (Array, error) {
 			return nil, err
 		}
 		if more {
-			if del, ok := tok.(tokDelim); ok {
-				if del.ch == ']' {
-					break
-				} else {
-					return nil, fmt.Errorf("jtree: unexpected delimiter '%c' at position %d", del.ch, tok.pos())
-				}
-			} else {
-				n, err := p.parse(tok)
-				if err != nil {
-					return nil, err
-				}
-				array = append(array, n)
-				more = false
+			if del, ok := tok.(tokDelim); ok && del.ch == ']' {
+				break
 			}
+			n, err := p.parse(tok)
+			if err != nil {
+				return nil, err
+			}
+			array = append(array, n)
+			more = false
 		} else {
 			if del, ok := tok.(tokDelim); !ok || del.ch != ',' && del.ch != ']' {
 				return nil, fmt.Errorf("jtree: unexpected token at position %d: '%v'", tok.pos(), tok)

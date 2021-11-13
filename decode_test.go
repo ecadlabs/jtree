@@ -12,12 +12,20 @@ import (
 )
 
 func newStr(s string) *string { return &s }
+func newStrP(s string) **string {
+	p := &s
+	return &p
+}
 func newBytes(s string) *[]byte {
 	b := []byte(s)
 	return &b
 }
 
-func newInt(s int) *int             { return &s }
+func newInt(s int) *int { return &s }
+func newIntP(i int) **int {
+	p := &i
+	return &p
+}
 func newBool(b bool) *bool          { return &b }
 func newUint(u uint) *uint          { return &u }
 func newNode(n Node) *Node          { return &n }
@@ -40,12 +48,14 @@ func TestString(t *testing.T) {
 		err    string
 	}{
 		{n: "aaa", out: new(string), expect: newStr("aaa")},
+		{n: "aaa", out: new(*string), expect: newStrP("aaa")},
 		{n: "aaa", out: new([]byte), expect: newBytes("aaa"), op: []Option{OpString}},
 		{n: "YWFh", out: new([]byte), expect: newBytes("aaa")},
 		{n: "YWFh", out: new(string), expect: newStr("aaa"), op: []Option{OpEncoding(Base64)}},
 		{n: "616161", out: new([]byte), expect: newBytes("aaa"), op: []Option{OpEncoding(Hex)}},
 		{n: "aaa", out: new(Node), expect: newNode(String("aaa"))},
 		{n: "123", out: new(int), expect: newInt(123), op: []Option{OpString}},
+		{n: "123", out: new(*int), expect: newIntP(123), op: []Option{OpString}},
 		{n: "123", out: new(int), err: "jtree: can't convert string to int"},
 		{n: "123", out: new(uint), expect: newUint(123), op: []Option{OpString}},
 		{n: "123", out: new(big.Int), expect: big.NewInt(123)},
@@ -79,6 +89,7 @@ func TestNum(t *testing.T) {
 		expect interface{}
 	}{
 		{n: newNumNode("123"), out: new(int), expect: newInt(123)},
+		{n: newNumNode("123"), out: new(*int), expect: newIntP(123)},
 		{n: newNumNode("123"), out: new(uint), expect: newUint(123)},
 		{n: newNumNode("123"), out: new(string), expect: newStr("123")},
 		{n: newNumNode("123"), out: new(float64), expect: newFloat64(123)},
@@ -107,8 +118,8 @@ func TestNull(t *testing.T) {
 		out    interface{}
 		expect interface{}
 	}{
-		{out: new(int), expect: newInt(0)},
-		{out: new(*int), expect: new(*int)},
+		{out: newInt(123), expect: newInt(0)},
+		{out: newIntP(120), expect: new(*int)},
 		{out: new(interface{}), expect: new(interface{})},
 	}
 	for _, tt := range tst {
@@ -170,6 +181,7 @@ type T0 struct {
 	F0 int
 	F1 string `json:"f1"`
 	*T2
+	FF *string
 }
 
 type T1 struct {
@@ -181,6 +193,7 @@ type T2 struct {
 	F3 int    `json:"f3,string"`
 	F4 string `json:"f4"`
 	S  int    `json:"-"`
+	ZZ *string
 }
 
 func TestObject(t *testing.T) {
@@ -191,26 +204,33 @@ func TestObject(t *testing.T) {
 		{"f3", String("123")},
 		{"f4", String("ccc")},
 		{"S", (*Num)(big.NewFloat(2))},
+		{"ZZ", Null{}},
+	}
+	expect := T0{
+		T1: T1{
+			F0: 0,
+			F2: "bbb",
+		},
+		F0: 1,
+		F1: "aaa",
+		T2: &T2{
+			F3: 123,
+			F4: "ccc",
+			S:  0,
+		},
 	}
 	var dst0 T0
 	if assert.NoError(t, src.NewObject().Decode(&dst0)) {
-		assert.Equal(t, &T0{
-			T1: T1{
-				F0: 0,
-				F2: "bbb",
-			},
-			F0: 1,
-			F1: "aaa",
-			T2: &T2{
-				F3: 123,
-				F4: "ccc",
-				S:  0,
-			},
-		}, &dst0)
+		assert.Equal(t, expect, dst0)
 	}
 	var dst1 T0
 	err := src.NewObject().Decode(&dst1, OpDisallowUnknownFields)
 	assert.EqualError(t, err, "jtree: undefined field 'S': jtree.T0")
+
+	var dst2 *T0
+	if assert.NoError(t, src.NewObject().Decode(&dst2)) {
+		assert.Equal(t, &expect, dst2)
+	}
 }
 
 func TestMapInterface(t *testing.T) {

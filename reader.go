@@ -4,27 +4,28 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"unicode/utf16"
 )
 
 type token interface {
-	pos() int
+	pos() int64
 	String() string
 }
 
 type tokDelim struct {
-	ch int
-	p  int
+	ch rune
+	p  int64
 }
 
-func (t tokDelim) pos() int       { return t.p }
+func (t tokDelim) pos() int64     { return t.p }
 func (t tokDelim) String() string { return string(rune(t.ch)) }
 
 type tokString struct {
 	str string
-	p   int
+	p   int64
 }
 
-func (t tokString) pos() int       { return t.p }
+func (t tokString) pos() int64     { return t.p }
 func (t tokString) String() string { return t.str }
 
 type tokNum struct {
@@ -35,43 +36,45 @@ type tokRes struct {
 	tokString
 }
 
-func isSpace(c int) bool {
+func isSpace(c rune) bool {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n'
 }
 
-func isNum(c int) bool {
+func isNum(c rune) bool {
 	return c >= '0' && c <= '9' || c == '+' || c == '-' || c == '.' || c == 'e' || c == 'E'
 }
 
 type reader struct {
-	r       io.ByteReader
-	eof     bool
-	unr     int
-	lastPos int
+	r   io.RuneReader
+	eof bool
+	unr int
+	off int64
 }
 
-func newReader(r io.ByteReader) *reader {
-	return &reader{r: r, unr: -1, lastPos: -1}
+func newReader(r io.RuneReader) *reader {
+	return &reader{r: r, unr: -1}
 }
 
-func (r *reader) byte() (b int, err error) {
+func (r *reader) pos() int64 { return r.off - 1 }
+
+func (r *reader) rune() (v rune, err error) {
 	if r.unr >= 0 {
-		b, r.unr, r.lastPos = r.unr, -1, r.lastPos+1
+		v, r.unr, r.off = rune(r.unr), -1, r.off+1
 		return
 	}
-	c, err := r.r.ReadByte()
+	c, _, err := r.r.ReadRune()
 	if err != nil {
 		if err == io.EOF {
 			r.eof = true
 		}
-		return -1, err
+		return 0, err
 	}
-	b, r.lastPos = int(c), r.lastPos+1
+	v, r.off = c, r.off+1
 	return
 }
 
-func (r *reader) unread(b int) {
-	r.unr, r.lastPos = b, r.lastPos-1
+func (r *reader) unread(b rune) {
+	r.unr, r.off = int(b), r.off-1
 }
 
 func (r *reader) token() (token, error) {
@@ -79,24 +82,24 @@ func (r *reader) token() (token, error) {
 		return nil, io.EOF
 	}
 	var (
-		c   int
+		c   rune
 		err error
 	)
 	for ok := true; ok; ok = isSpace(c) {
-		c, err = r.byte()
+		c, err = r.rune()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	pos := r.lastPos
+	pos := r.pos()
 	switch {
 	case c >= '0' && c <= '9' || c == '-' || c == '.':
 		// number
-		var s strings.Builder
+		s := make([]rune, 0)
 		for {
-			s.WriteByte(byte(c))
-			c, err = r.byte()
+			s = append(s, c)
+			c, err = r.rune()
 			if err == io.EOF {
 				break
 			} else if err != nil {
@@ -106,7 +109,7 @@ func (r *reader) token() (token, error) {
 				break
 			}
 		}
-		return tokNum{tokString{s.String(), pos}}, nil
+		return tokNum{tokString{string(s), pos}}, nil
 
 	case c == '"':
 		s, err := r.string()
@@ -123,7 +126,7 @@ func (r *reader) token() (token, error) {
 		var s strings.Builder
 		for {
 			s.WriteByte(byte(c))
-			c, err = r.byte()
+			c, err = r.rune()
 			if err == io.EOF {
 				break
 			} else if err != nil {
@@ -142,44 +145,32 @@ func (r *reader) token() (token, error) {
 
 func (r *reader) string() (string, error) {
 	var (
-		s    strings.Builder
 		esc  bool
 		ln   int
-		code int
+		code uint
 	)
-	code0 := -1
+	u16 := make([]uint16, 0)
 	for {
-		c, err := r.byte()
+		c, err := r.rune()
 		if err != nil {
 			return "", err
 		}
 		if ln != 0 {
-			var hex int
+			var hex uint
 			switch {
 			case c >= '0' && c <= '9':
-				hex = c - '0'
+				hex = uint(c) - '0'
 			case c >= 'a' && c <= 'f':
-				hex = c - 'a' + 0xa
+				hex = uint(c) - 'a' + 0xa
 			case c >= 'A' && c <= 'F':
-				hex = c - 'A' + 0xa
+				hex = uint(c) - 'A' + 0xa
 			default:
-				return "", fmt.Errorf("jtree: invalid hexadecimal digit '%c' at position %d", c, r.lastPos)
+				return "", fmt.Errorf("jtree: invalid hexadecimal digit '%c' at position %d", c, r.pos())
 			}
 			code = code<<4 | hex
 			ln--
 			if ln == 0 {
-				if code0 >= 0 {
-					if code&0xfc00 != 0xdc00 {
-						return "", fmt.Errorf("jtree: invalid code %#x in surrogate pair", code)
-					}
-					code = code&0x03ff | (code0&0x03ff)<<10 | 0x10000
-					s.WriteRune(rune(code))
-					code0 = -1
-				} else if code&0xfc00 == 0xd800 {
-					code0 = code
-				} else {
-					s.WriteRune(rune(code))
-				}
+				u16 = append(u16, uint16(code))
 				code = 0
 			}
 		} else if esc {
@@ -189,7 +180,6 @@ func (r *reader) string() (string, error) {
 			} else if c == 'x' {
 				ln = 2
 			} else {
-				code0 = -1
 				switch c {
 				case 'b':
 					c = '\b'
@@ -202,17 +192,16 @@ func (r *reader) string() (string, error) {
 				case 't':
 					c = '\t'
 				}
-				s.WriteByte(byte(c))
+				u16 = append(u16, utf16.Encode([]rune{c})...)
 			}
 		} else if c == '\\' {
 			esc = true
 		} else {
-			code0 = -1
 			if c == '"' {
 				break
 			}
-			s.WriteByte(byte(c))
+			u16 = append(u16, utf16.Encode([]rune{c})...)
 		}
 	}
-	return s.String(), nil
+	return string(utf16.Decode(u16)), nil
 }
