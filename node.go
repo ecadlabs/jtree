@@ -2,66 +2,33 @@ package jtree
 
 import (
 	"encoding"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-)
-
-type Encoding interface {
-	Encode([]byte) []byte
-	Decode([]byte) ([]byte, error)
-}
-
-type base64Encoding struct{}
-
-func (base64Encoding) Encode(src []byte) []byte {
-	buf := make([]byte, base64.StdEncoding.EncodedLen(len(src)))
-	base64.StdEncoding.Encode(buf, src)
-	return buf
-}
-
-func (base64Encoding) Decode(src []byte) ([]byte, error) {
-	buf := make([]byte, base64.StdEncoding.DecodedLen(len(src)))
-	n, err := base64.StdEncoding.Decode(buf, src)
-	return buf[:n], err
-}
-
-type hexEncoding struct{}
-
-func (hexEncoding) Encode(src []byte) []byte {
-	buf := make([]byte, hex.EncodedLen(len(src)))
-	hex.Encode(buf, src)
-	return buf
-}
-
-func (hexEncoding) Decode(src []byte) ([]byte, error) {
-	buf := make([]byte, hex.DecodedLen(len(src)))
-	n, err := hex.Decode(buf, src)
-	return buf[:n], err
-}
-
-var (
-	Base64 Encoding = base64Encoding{}
-	Hex    Encoding = hexEncoding{}
 )
 
 type globalOptions struct {
 	noUnknown bool
-	reg       *TypeRegistry
+	typeReg   *TypeRegistry
+	encReg    *EncodingRegistry
 }
 
 func (g *globalOptions) types() *TypeRegistry {
-	if g.reg != nil {
-		return g.reg
+	if g.typeReg != nil {
+		return g.typeReg
 	}
-	return defaultRegistry
+	return defaultTypeRegistry
+}
+
+func (g *globalOptions) encodings() *EncodingRegistry {
+	if g.encReg != nil {
+		return g.encReg
+	}
+	return defaultEncodingRegistry
 }
 
 type decoderOptions struct {
@@ -85,13 +52,24 @@ func (o *decoderOptions) g() *globalOptions {
 	return o.global
 }
 
-// Node options
-func OpString(o *decoderOptions)   { o.str = true }
+// OpString makes the numeric value to be encoded/decoded as a string and the byte slice value
+// to be converted to a string as is (skips the binary encoding scheme)
+func OpString(o *decoderOptions) { o.str = true }
+
+// OpEncoding specifies the binary encoding scheme used for byte slices. Without this option base64 scheme will be used
 func OpEncoding(e Encoding) Option { return func(o *decoderOptions) { o.enc = e } }
 
-// Global options
-func OpTypes(r *TypeRegistry) Option            { return func(o *decoderOptions) { o.g().reg = r } }
+// OpTypes provides custom user type registry. The option is global for all Decode calls in chain
+func OpTypes(r *TypeRegistry) Option { return func(o *decoderOptions) { o.g().typeReg = r } }
+
+// OpEncodings provides custom user encodings registry. The option is global for all Decode calls in chain
+func OpEncodings(e *EncodingRegistry) Option { return func(o *decoderOptions) { o.g().encReg = e } }
+
+// OpDisallowUnknownFields causes the Decode method to return an error when the destination is a struct
+// and the input contains object keys which do not match any non-ignored, exported fields in the destination.
 func OpDisallowUnknownFields(o *decoderOptions) { o.g().noUnknown = true }
+
+// OpGlobal passes global options to subsequent Decode calls. Used in custom decoders
 func OpGlobal(op []Option) Option {
 	return func(o *decoderOptions) {
 		src := new(decoderOptions).apply(op)
@@ -101,10 +79,14 @@ func OpGlobal(op []Option) Option {
 
 func opG(src *decoderOptions) Option { return func(o *decoderOptions) { o.global = src.global } }
 
+// Option is a function pointer used to pass options to Decode method
 type Option func(*decoderOptions)
 
+// Node is a JSON AST node
 type Node interface {
+	// Type returns Node type name: "number", "string", "object", "array", "boolean" or "null"
 	Type() string
+	// Decode decodes the node into the value pointed by v
 	Decode(v interface{}, op ...Option) error
 	/*
 		// TODO
@@ -113,10 +95,13 @@ type Node interface {
 	*/
 }
 
+// Num represents numeric node
 type Num big.Float // on conversion operations the difference in performance between big.Float and big.Int is insignificant
 
+// Type returns the node type i.e. "number"
 func (*Num) Type() string { return "number" }
 
+// Decode decodes the node into the value pointed by v
 func (n *Num) Decode(v interface{}, op ...Option) error {
 	fn := func(out reflect.Value) error {
 		switch out.Type() {
@@ -163,10 +148,13 @@ func (n *Num) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, n, fn, op...)
 }
 
+// String represents string node
 type String string
 
+// Type returns the node i.e. "string"
 func (String) Type() string { return "string" }
 
+// Decode decodes the node into the value pointed by v
 func (s String) Decode(v interface{}, op ...Option) error {
 	opt := new(decoderOptions).apply(op)
 	fn := func(out reflect.Value) error {
@@ -248,20 +236,25 @@ func (s String) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, s, fn, op...)
 }
 
+// Object represents object node
 type Object struct {
 	keys   []string
 	values map[string]Node
 }
 
+// Type returns the node i.e. "object"
 func (*Object) Type() string { return "object" }
 
+// Field is used to construct objects
 type Field struct {
 	Key   string
 	Value Node
 }
 
+// Fields is used to construct objects
 type Fields []*Field
 
+// NewObject returns new Object node
 func (f Fields) NewObject() *Object {
 	object := Object{
 		keys:   make([]string, len(f)),
@@ -274,14 +267,17 @@ func (f Fields) NewObject() *Object {
 	return &object
 }
 
+// Keys returns all object keys
 func (o *Object) Keys() []string {
 	return o.keys
 }
 
+// FieldByName returns the field with specific name or nil
 func (o *Object) FieldByName(f string) Node {
 	return o.values[f]
 }
 
+// Field returns i'th field or nil if the number of fields is exceeded
 func (o *Object) Field(i int) (string, Node) {
 	if i >= len(o.keys) {
 		return "", nil
@@ -289,10 +285,12 @@ func (o *Object) Field(i int) (string, Node) {
 	return o.keys[i], o.values[o.keys[i]]
 }
 
+// NumField returns the number of fields
 func (o *Object) NumField() int {
 	return len(o.keys)
 }
 
+// Decode decodes the node into the value pointed by v
 func (o *Object) Decode(v interface{}, op ...Option) error {
 	opt := new(decoderOptions).apply(op)
 	fn := func(out reflect.Value) error {
@@ -321,7 +319,8 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 						dest = dest.Elem()
 					}
 				}
-				if err := elem.Decode(dest.Addr().Interface(), append([]Option{opG(opt)}, field.opt...)...); err != nil {
+				fopt := parseFieldOptions(field.opt, opt)
+				if err := elem.Decode(dest.Addr().Interface(), append([]Option{opG(opt)}, fopt...)...); err != nil {
 					return err
 				}
 			}
@@ -351,10 +350,13 @@ func (o *Object) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, o, fn, op...)
 }
 
+// Array represents JSON array
 type Array []Node
 
+// Type returns the node i.e. "array"
 func (Array) Type() string { return "array" }
 
+// Decode decodes the node into the value pointed by v
 func (a Array) Decode(v interface{}, op ...Option) error {
 	opt := new(decoderOptions).apply(op)
 	fn := func(out reflect.Value) error {
@@ -383,10 +385,13 @@ func (a Array) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, a, fn, op...)
 }
 
+// Array represents boolean node
 type Bool bool
 
+// Type returns the node i.e. "boolean"
 func (Bool) Type() string { return "boolean" }
 
+// Decode decodes the node into the value pointed by v
 func (b Bool) Decode(v interface{}, op ...Option) error {
 	fn := func(out reflect.Value) error {
 		k := out.Kind()
@@ -413,10 +418,13 @@ func (b Bool) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, b, fn, op...)
 }
 
+// Array represents null node
 type Null struct{}
 
+// Type returns the node i.e. "null"
 func (Null) Type() string { return "null" }
 
+// Decode decodes the node into the value pointed by v
 func (n Null) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, n, nil, op...)
 }
@@ -508,23 +516,26 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 	return nil
 }
 
-func parseTag(tag string) (name string, opt []Option) {
+func parseTag(tag string) (name string, opt []string) {
 	s := strings.Split(tag, ",")
-	name = s[0]
-	opt = make([]Option, 0)
-	for _, s := range s[1:] {
+	return s[0], s[1:]
+}
+
+func parseFieldOptions(tags []string, opt *decoderOptions) []Option {
+	o := make([]Option, 0)
+	for _, s := range tags {
 		if s == "string" {
-			opt = append(opt, OpString)
-		} else if enc, ok := encoders[s]; ok {
-			opt = append(opt, OpEncoding(enc))
+			o = append(o, OpString)
+		} else if enc := opt.g().encodings().get(s); enc != nil {
+			o = append(o, OpEncoding(enc))
 		}
 	}
-	return
+	return o
 }
 
 type structField struct {
 	*reflect.StructField
-	opt []Option
+	opt []string
 }
 
 func mkIndex(a, b []int) []int {
@@ -580,65 +591,3 @@ func collectFields(t reflect.Type, index []int, ptr []reflect.Type, out map[stri
 		}
 	}
 }
-
-var encoders = map[string]Encoding{
-	"base64": Base64,
-	"hex":    Hex,
-}
-
-func RegisterEncoding(tag string, enc Encoding) {
-	encoders[tag] = enc
-}
-
-type TypeRegistry struct {
-	types map[reflect.Type]interface{}
-	mtx   sync.RWMutex
-}
-
-func NewTypeRegistry() *TypeRegistry {
-	return &TypeRegistry{
-		types: make(map[reflect.Type]interface{}),
-	}
-}
-
-// RegisterType registers new interface type. The argument is a constructor function of type `func(Node, []Option) (UserType, error)`.
-// It panics if any other type is passed
-func (r *TypeRegistry) RegisterType(fn interface{}) {
-	ft := reflect.TypeOf(fn)
-	if ft.Kind() != reflect.Func {
-		panic(fmt.Sprintf("jtree: function expected: %v", ft))
-	}
-	if ft.NumIn() != 2 || ft.In(0) != nodeType || ft.In(1) != optionsType || ft.NumOut() != 2 || ft.Out(1) != errorType {
-		panic(fmt.Sprintf("jtree: invalid signature: %v", ft))
-	}
-	t := ft.Out(0)
-	if t.Kind() != reflect.Interface {
-		panic(fmt.Sprintf("jtree: user type must be an interface: %v", t))
-	}
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	if _, ok := r.types[t]; ok {
-		panic(fmt.Sprintf("jtree: duplicate user type: %v", t))
-	}
-	r.types[t] = fn
-}
-
-func (r *TypeRegistry) call(t reflect.Type, n Node, op []Option) (reflect.Value, error) {
-	r.mtx.RLock()
-	f, ok := r.types[t]
-	r.mtx.RUnlock()
-	if !ok {
-		return reflect.Value{}, nil
-	}
-	out := reflect.ValueOf(f).Call([]reflect.Value{reflect.ValueOf(n), reflect.ValueOf(op)})
-	if !out[1].IsNil() {
-		return reflect.Value{}, out[1].Interface().(error)
-	}
-	return out[0], nil
-}
-
-func RegisterType(fn interface{}) {
-	defaultRegistry.RegisterType(fn)
-}
-
-var defaultRegistry = NewTypeRegistry()

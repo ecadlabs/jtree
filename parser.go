@@ -6,10 +6,12 @@ import (
 	"math/big"
 )
 
+// Parser parses JSON stream into an AST representation
 type Parser struct {
 	r *reader
 }
 
+// NewParser returns new Parser
 func NewParser(r io.RuneReader) *Parser {
 	return &Parser{r: newReader(r)}
 }
@@ -134,6 +136,7 @@ func (p *Parser) parse(tok token) (Node, error) {
 	}
 }
 
+// Parse parses JSON stream into an AST representation
 func (p *Parser) Parse() (Node, error) {
 	tok, err := p.r.token()
 	if err != nil {
