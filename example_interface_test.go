@@ -50,7 +50,7 @@ func UserTypeFunc(n jtree.Node, op []jtree.Option) (UserType, error) {
 	return dest, n.Decode(dest, jtree.OpGlobal(op))
 }
 
-func Example() {
+func Example_userInterfaceType() {
 	src := `[
 	{"kind": "int", "int": 123},
 	{"kind": "string", "string": "text"},
