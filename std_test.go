@@ -1,4 +1,4 @@
-package jtree
+package jtree_test
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/ecadlabs/jtree"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -251,7 +252,7 @@ var unmarshalTests = []unmarshalTest{
 	{in: "null", ptr: new(interface{}), out: nil},
 	{in: `{"X": [1,2,3], "Y": 4}`, ptr: new(T), out: T{Y: 4}, err: "jtree: slice or array expected: string"},
 	{in: `{"x": 1}`, ptr: new(tx), out: tx{}},
-	{in: `{"x": 1}`, ptr: new(tx), err: "jtree: undefined field 'x': jtree.tx", disallowUnknownFields: true},
+	{in: `{"x": 1}`, ptr: new(tx), err: "jtree: undefined field 'x': jtree_test.tx", disallowUnknownFields: true},
 	{in: `{"F1":1,"F2":2,"F3":3}`, ptr: new(V), out: V{F1: float64(1), F2: int32(2), F3: Number("3")}},
 	{in: `{"k1":1,"k2":"s","k3":[1,2.0,3e-3],"k4":{"kk1":"s","kk2":2}}`, ptr: new(interface{}), out: ifaceNumAsFloat64},
 
@@ -264,13 +265,13 @@ var unmarshalTests = []unmarshalTest{
 
 	// Z has a "-" tag.
 	{in: `{"Y": 1, "Z": 2}`, ptr: new(T), out: T{Y: 1}},
-	{in: `{"Y": 1, "Z": 2}`, ptr: new(T), err: "jtree: undefined field 'Z': jtree.T", disallowUnknownFields: true},
+	{in: `{"Y": 1, "Z": 2}`, ptr: new(T), err: "jtree: undefined field 'Z': jtree_test.T", disallowUnknownFields: true},
 
 	{in: `{"alpha": "abc", "alphabet": "xyz"}`, ptr: new(U), out: U{Alphabet: "abc"}},
-	{in: `{"alpha": "abc", "alphabet": "xyz"}`, ptr: new(U), err: "jtree: undefined field 'alphabet': jtree.U", disallowUnknownFields: true},
+	{in: `{"alpha": "abc", "alphabet": "xyz"}`, ptr: new(U), err: "jtree: undefined field 'alphabet': jtree_test.U", disallowUnknownFields: true},
 	{in: `{"alpha": "abc"}`, ptr: new(U), out: U{Alphabet: "abc"}},
 	{in: `{"alphabet": "xyz"}`, ptr: new(U), out: U{}},
-	{in: `{"alphabet": "xyz"}`, ptr: new(U), err: "jtree: undefined field 'alphabet': jtree.U", disallowUnknownFields: true},
+	{in: `{"alphabet": "xyz"}`, ptr: new(U), err: "jtree: undefined field 'alphabet': jtree_test.U", disallowUnknownFields: true},
 
 	// syntax errors
 	{in: `{"X": "foo", "Y"}`, err: "jtree: colon expected at position 16: '}'"},
@@ -460,7 +461,7 @@ var unmarshalTests = []unmarshalTest{
 			"extra": true
 		}`,
 		ptr:                   new(Top),
-		err:                   "jtree: undefined field 'extra': jtree.Top",
+		err:                   "jtree: undefined field 'extra': jtree_test.Top",
 		disallowUnknownFields: true,
 	},
 	{
@@ -487,7 +488,7 @@ var unmarshalTests = []unmarshalTest{
 			"Q": 18
 		}`,
 		ptr:                   new(Top),
-		err:                   "jtree: undefined field 'extra': jtree.Embed0b",
+		err:                   "jtree: undefined field 'extra': jtree_test.Embed0b",
 		disallowUnknownFields: true,
 	},
 }
@@ -495,7 +496,7 @@ var unmarshalTests = []unmarshalTest{
 func TestUnmarshal(t *testing.T) {
 	for _, tt := range unmarshalTests {
 		in := []byte(tt.in)
-		p := NewParser(bytes.NewReader(in))
+		p := jtree.NewParser(bytes.NewReader(in))
 		node, err := p.Parse()
 		if tt.err != "" && err != nil {
 			assert.EqualError(t, err, tt.err, tt.in)
@@ -507,9 +508,9 @@ func TestUnmarshal(t *testing.T) {
 			typ = typ.Elem()
 			v := reflect.New(typ)
 
-			var op []Option
+			var op []jtree.Option
 			if tt.disallowUnknownFields {
-				op = []Option{OpDisallowUnknownFields}
+				op = []jtree.Option{jtree.OpDisallowUnknownFields}
 			}
 			err := node.Decode(v.Interface(), op...)
 			if tt.err != "" {

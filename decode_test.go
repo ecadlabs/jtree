@@ -1,4 +1,4 @@
-package jtree
+package jtree_test
 
 import (
 	"errors"
@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ecadlabs/jtree"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,10 +26,10 @@ func newIntP(i int) **int {
 	p := &i
 	return &p
 }
-func newBool(b bool) *bool          { return &b }
-func newUint(u uint) *uint          { return &u }
-func newNode(n Node) *Node          { return &n }
-func newFloat64(f float64) *float64 { return &f }
+func newBool(b bool) *bool             { return &b }
+func newUint(u uint) *uint             { return &u }
+func newNode(n jtree.Node) *jtree.Node { return &n }
+func newFloat64(f float64) *float64    { return &f }
 func newBigFloat(s string) *big.Float {
 	f, _, _ := new(big.Float).Parse(s, 10)
 	return f
@@ -45,15 +46,15 @@ func mkTime(s string) *time.Time {
 }
 
 func TestDecode(t *testing.T) {
-	objNode := Fields{
-		{"F0", (*Num)(big.NewFloat(1))},
-		{"f1", String("aaa")},
-		{"f2", String("bbb")},
-		{"f3", String("123")},
-		{"f4", String("ccc")},
-		{"S", (*Num)(big.NewFloat(2))},
-		{"ZZ", Null{}},
-		{"XX", (*Num)(big.NewFloat(3))},
+	objNode := jtree.Fields{
+		{"F0", (*jtree.Num)(big.NewFloat(1))},
+		{"f1", jtree.String("aaa")},
+		{"f2", jtree.String("bbb")},
+		{"f3", jtree.String("123")},
+		{"f4", jtree.String("ccc")},
+		{"S", (*jtree.Num)(big.NewFloat(2))},
+		{"ZZ", jtree.Null{}},
+		{"XX", (*jtree.Num)(big.NewFloat(3))},
 	}.NewObject()
 
 	objVal := &T0{
@@ -71,32 +72,32 @@ func TestDecode(t *testing.T) {
 	}
 
 	tst := []struct {
-		n      Node
+		n      jtree.Node
 		out    interface{}
 		expect interface{}
-		op     []Option
+		op     []jtree.Option
 		err    string
 	}{
-		{n: String("aaa"), out: new(string), expect: newStr("aaa")},
-		{n: String("aaa"), out: new(*string), expect: newStrP("aaa")},
-		{n: String("aaa"), out: new([]byte), expect: newBytes("aaa"), op: []Option{OpString}},
-		{n: String("YWFh"), out: new([]byte), expect: newBytes("aaa")},
-		{n: String("YWFh"), out: new(string), expect: newStr("aaa"), op: []Option{OpEncoding(Base64)}},
-		{n: String("616161"), out: new([]byte), expect: newBytes("aaa"), op: []Option{OpEncoding(Hex)}},
-		{n: String("aaa"), out: new(Node), expect: newNode(String("aaa"))},
-		{n: String("123"), out: new(int), expect: newInt(123), op: []Option{OpString}},
-		{n: String("123"), out: new(*int), expect: newIntP(123), op: []Option{OpString}},
-		{n: String("123"), out: new(int), err: "jtree: can't convert string to int"},
-		{n: String("123"), out: new(uint), expect: newUint(123), op: []Option{OpString}},
-		{n: String("123"), out: new(big.Int), expect: big.NewInt(123)},
-		{n: String("123"), out: new(big.Float), expect: newBigFloat("123")},
-		{n: String("true"), out: new(bool), expect: newBool(true), op: []Option{OpString}},
-		{n: String("true"), out: new(bool), err: "jtree: can't convert string to bool"},
-		{n: String("zzz"), out: new(bool), op: []Option{OpString}, err: "jtree: strconv.ParseBool: parsing \"zzz\": invalid syntax"},
-		{n: String("yep"), out: new(CanDecode), expect: (*CanDecode)(newInt(1))},
-		{n: String("nope"), out: new(CanDecode), expect: (*CanDecode)(newInt(0))},
-		{n: String("maybe"), out: new(CanDecode), expect: (*CanDecode)(newInt(-1))},
-		{n: String("whaaat"), out: new(CanDecode), err: "jtree: unknown string: whaaat"},
+		{n: jtree.String("aaa"), out: new(string), expect: newStr("aaa")},
+		{n: jtree.String("aaa"), out: new(*string), expect: newStrP("aaa")},
+		{n: jtree.String("aaa"), out: new([]byte), expect: newBytes("aaa"), op: []jtree.Option{jtree.OpString}},
+		{n: jtree.String("YWFh"), out: new([]byte), expect: newBytes("aaa")},
+		{n: jtree.String("YWFh"), out: new(string), expect: newStr("aaa"), op: []jtree.Option{jtree.OpEncoding(jtree.Base64)}},
+		{n: jtree.String("616161"), out: new([]byte), expect: newBytes("aaa"), op: []jtree.Option{jtree.OpEncoding(jtree.Hex)}},
+		{n: jtree.String("aaa"), out: new(jtree.Node), expect: newNode(jtree.String("aaa"))},
+		{n: jtree.String("123"), out: new(int), expect: newInt(123), op: []jtree.Option{jtree.OpString}},
+		{n: jtree.String("123"), out: new(*int), expect: newIntP(123), op: []jtree.Option{jtree.OpString}},
+		{n: jtree.String("123"), out: new(int), err: "jtree: can't convert string to int"},
+		{n: jtree.String("123"), out: new(uint), expect: newUint(123), op: []jtree.Option{jtree.OpString}},
+		{n: jtree.String("123"), out: new(big.Int), expect: big.NewInt(123)},
+		{n: jtree.String("123"), out: new(big.Float), expect: newBigFloat("123")},
+		{n: jtree.String("true"), out: new(bool), expect: newBool(true), op: []jtree.Option{jtree.OpString}},
+		{n: jtree.String("true"), out: new(bool), err: "jtree: can't convert string to bool"},
+		{n: jtree.String("zzz"), out: new(bool), op: []jtree.Option{jtree.OpString}, err: "jtree: strconv.ParseBool: parsing \"zzz\": invalid syntax"},
+		{n: jtree.String("yep"), out: new(CanDecode), expect: (*CanDecode)(newInt(1))},
+		{n: jtree.String("nope"), out: new(CanDecode), expect: (*CanDecode)(newInt(0))},
+		{n: jtree.String("maybe"), out: new(CanDecode), expect: (*CanDecode)(newInt(-1))},
+		{n: jtree.String("whaaat"), out: new(CanDecode), err: "jtree: unknown string: whaaat"},
 		{n: newNumNode("123"), out: new(int), expect: newInt(123)},
 		{n: newNumNode("123"), out: new(*int), expect: newIntP(123)},
 		{n: newNumNode("123"), out: new(uint), expect: newUint(123)},
@@ -107,22 +108,22 @@ func TestDecode(t *testing.T) {
 		{n: newNumNode("1"), out: new(bool), expect: newBool(true)},
 		{n: newNumNode("0"), out: new(bool), expect: newBool(false)},
 
-		{n: String("2021-11-11T15:08:52.537Z"), out: new(time.Time), expect: mkTime("2021-11-11T15:08:52.537Z")},
+		{n: jtree.String("2021-11-11T15:08:52.537Z"), out: new(time.Time), expect: mkTime("2021-11-11T15:08:52.537Z")},
 		{n: newNumNode("1636643332"), out: new(time.Time), expect: mkTime("2021-11-11T15:08:52Z")},
 
-		{n: Null{}, out: newInt(123), expect: newInt(0)},
-		{n: Null{}, out: newIntP(120), expect: new(*int)},
-		{n: Null{}, out: new(interface{}), expect: new(interface{})},
+		{n: jtree.Null{}, out: newInt(123), expect: newInt(0)},
+		{n: jtree.Null{}, out: newIntP(120), expect: new(*int)},
+		{n: jtree.Null{}, out: new(interface{}), expect: new(interface{})},
 
-		{n: Array{String("aaa"), String("bbb")}, out: new([]string), expect: &[]string{"aaa", "bbb"}},
-		{n: Array{String("aaa"), String("bbb")}, out: new([3]string), expect: &[3]string{"aaa", "bbb"}},
-		{n: Array{String("aaa"), String("bbb")}, out: new([1]string), expect: &[1]string{"aaa"}},
+		{n: jtree.Array{jtree.String("aaa"), jtree.String("bbb")}, out: new([]string), expect: &[]string{"aaa", "bbb"}},
+		{n: jtree.Array{jtree.String("aaa"), jtree.String("bbb")}, out: new([3]string), expect: &[3]string{"aaa", "bbb"}},
+		{n: jtree.Array{jtree.String("aaa"), jtree.String("bbb")}, out: new([1]string), expect: &[1]string{"aaa"}},
 
 		{
-			n: Fields{
-				{"f0", (*Num)(big.NewFloat(1))},
-				{"f1", String("aaa")},
-				{"f2", String("ccc")},
+			n: jtree.Fields{
+				{"f0", (*jtree.Num)(big.NewFloat(1))},
+				{"f1", jtree.String("aaa")},
+				{"f2", jtree.String("ccc")},
 			}.NewObject(),
 			out: new(map[string]interface{}),
 			expect: &(map[string]interface{}{
@@ -132,10 +133,10 @@ func TestDecode(t *testing.T) {
 			}),
 		},
 		{
-			n: Fields{
-				{"f0", (*Num)(big.NewFloat(1))},
-				{"f1", (*Num)(big.NewFloat(2))},
-				{"f2", (*Num)(big.NewFloat(3))},
+			n: jtree.Fields{
+				{"f0", (*jtree.Num)(big.NewFloat(1))},
+				{"f1", (*jtree.Num)(big.NewFloat(2))},
+				{"f2", (*jtree.Num)(big.NewFloat(3))},
 			}.NewObject(),
 			out: new(map[string]int),
 			expect: &(map[string]int{
@@ -157,8 +158,8 @@ func TestDecode(t *testing.T) {
 		{
 			n:   objNode,
 			out: new(T0),
-			err: "jtree: undefined field 'S': jtree.T0",
-			op:  []Option{OpDisallowUnknownFields},
+			err: "jtree: undefined field 'S': jtree_test.T0",
+			op:  []jtree.Option{jtree.OpDisallowUnknownFields},
 		},
 	}
 	for _, tt := range tst {
@@ -173,12 +174,12 @@ func TestDecode(t *testing.T) {
 
 func TestInterface(t *testing.T) {
 	tst := []struct {
-		n      Node
+		n      jtree.Node
 		expect interface{}
 	}{
 		{n: newNumNode("123"), expect: float64(123)},
-		{n: String("aaa"), expect: "aaa"},
-		{n: Array{String("aaa"), String("bbb")}, expect: []interface{}{"aaa", "bbb"}},
+		{n: jtree.String("aaa"), expect: "aaa"},
+		{n: jtree.Array{jtree.String("aaa"), jtree.String("bbb")}, expect: []interface{}{"aaa", "bbb"}},
 	}
 	for _, tt := range tst {
 		var dest interface{}
@@ -213,81 +214,81 @@ type unexported struct {
 	XX int
 }
 
-type UserType interface {
+type userType interface {
 	ImplKind() string
 }
 
-type UserTypeInt struct {
+type userTypeInt struct {
 	Kind string `json:"kind"`
 	Int  int    `json:"int"`
 }
 
-func (u *UserTypeInt) ImplKind() string { return "int" }
+func (u *userTypeInt) ImplKind() string { return "int" }
 
-type UserTypeStr struct {
+type userTypeStr struct {
 	Kind string `json:"kind"`
 	Str  string `json:"str"`
 }
 
-func (u *UserTypeStr) ImplKind() string { return "str" }
+func (u *userTypeStr) ImplKind() string { return "str" }
 
-func UserTypeFunc(n Node, op []Option) (UserType, error) {
-	obj, ok := n.(*Object)
+func userTypeFunc(n jtree.Node, op []jtree.Option) (userType, error) {
+	obj, ok := n.(*jtree.Object)
 	if !ok {
 		return nil, errors.New("not an object")
 	}
-	kind, ok := obj.FieldByName("kind").(String)
+	kind, ok := obj.FieldByName("kind").(jtree.String)
 	if !ok {
 		return nil, errors.New("malformed object")
 	}
-	var dest UserType
+	var dest userType
 	switch kind {
 	case "int":
-		dest = &UserTypeInt{}
+		dest = &userTypeInt{}
 	case "str":
-		dest = &UserTypeStr{}
+		dest = &userTypeStr{}
 	default:
 		return nil, fmt.Errorf("unknown kind '%s'", string(kind))
 	}
-	return dest, n.Decode(dest, OpGlobal(op))
+	return dest, n.Decode(dest, jtree.OpGlobal(op))
 }
 
 func TestUserType(t *testing.T) {
 	tst := []struct {
-		n      Node
-		out    *UserType
-		expect UserType
+		n      jtree.Node
+		out    *userType
+		expect userType
 		err    string
 	}{
 		{
-			n: Fields{
-				{"kind", String("int")},
-				{"int", (*Num)(big.NewFloat(1))},
+			n: jtree.Fields{
+				{"kind", jtree.String("int")},
+				{"int", (*jtree.Num)(big.NewFloat(1))},
 			}.NewObject(),
-			out: new(UserType),
-			expect: &UserTypeInt{
+			out: new(userType),
+			expect: &userTypeInt{
 				Kind: "int",
 				Int:  1,
 			},
 		},
 		{
-			n: Fields{
-				{"kind", String("str")},
-				{"str", String("aaa")},
+			n: jtree.Fields{
+				{"kind", jtree.String("str")},
+				{"str", jtree.String("aaa")},
 			}.NewObject(),
-			out: new(UserType),
-			expect: &UserTypeStr{
+			out: new(userType),
+			expect: &userTypeStr{
 				Kind: "str",
 				Str:  "aaa",
 			},
 		},
 	}
 
-	reg := NewTypeRegistry()
-	reg.RegisterType(UserTypeFunc)
+	reg := jtree.NewTypeRegistry()
+	reg.RegisterType(userTypeFunc)
 
 	for _, tt := range tst {
-		err := tt.n.Decode(tt.out, OpTypes(reg))
+		err := tt.n.Decode(tt.out, jtree.OpTypes(reg))
 		if tt.err != "" {
 			assert.EqualError(t, err, tt.err)
 		} else if assert.NoError(t, err) {
@@ -298,8 +299,8 @@ func TestUserType(t *testing.T) {
 
 type CanDecode int
 
-func (c *CanDecode) DecodeJSON(node Node) error {
-	if s, ok := node.(String); ok {
+func (c *CanDecode) DecodeJSON(node jtree.Node) error {
+	if s, ok := node.(jtree.String); ok {
 		switch s {
 		case "nope":
 			*c = 0
