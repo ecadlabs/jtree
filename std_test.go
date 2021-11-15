@@ -44,7 +44,7 @@ type P struct {
 
 type PP struct {
 	T  T
-	Ts []T
+	TS []T
 }
 
 // ifaceNumAsFloat64/ifaceNumAsNumber are used to test unmarshaling with and

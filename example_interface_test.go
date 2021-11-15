@@ -40,14 +40,16 @@ func UserTypeFunc(n jtree.Node, ctx *jtree.Context) (UserType, error) {
 	var dest UserType
 	switch kind {
 	case "int":
-		dest = &UserTypeInt{}
+		dest = new(UserTypeInt)
 	case "string":
-		dest = &UserTypeStr{}
+		dest = new(UserTypeStr)
 	default:
 		return nil, fmt.Errorf("unknown kind '%s'", string(kind))
 	}
 
-	return dest, n.Decode(dest, jtree.OpCtx(ctx))
+	var tmp interface{} = dest
+	err := n.Decode(tmp, jtree.OpCtx(ctx))
+	return dest, err
 }
 
 func Example_userInterfaceType() {

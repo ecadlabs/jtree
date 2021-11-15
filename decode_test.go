@@ -99,7 +99,7 @@ func TestDecode(t *testing.T) {
 		{n: jtree.String("yep"), out: new(CanDecode), expect: (*CanDecode)(newInt(1))},
 		{n: jtree.String("nope"), out: new(CanDecode), expect: (*CanDecode)(newInt(0))},
 		{n: jtree.String("maybe"), out: new(CanDecode), expect: (*CanDecode)(newInt(-1))},
-		{n: jtree.String("whaaat"), out: new(CanDecode), err: "jtree: unknown string: whaaat"},
+		{n: jtree.String("whaaat"), out: new(CanDecode), err: "unknown string: whaaat"},
 		{n: newNumNode("123"), out: new(int), expect: newInt(123)},
 		{n: newNumNode("123"), out: new(*int), expect: newIntP(123)},
 		{n: newNumNode("123"), out: new(uint), expect: newUint(123)},

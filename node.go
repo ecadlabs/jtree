@@ -1,3 +1,4 @@
+// Package jtree is the AST centered JSON parser
 package jtree
 
 import (
@@ -399,7 +400,7 @@ func (a Array) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, a, fn, op...)
 }
 
-// Array represents boolean node
+// Bool represents boolean node
 type Bool bool
 
 // Type returns the node i.e. "boolean"
@@ -432,7 +433,7 @@ func (b Bool) Decode(v interface{}, op ...Option) error {
 	return decodeNode(v, b, fn, op...)
 }
 
-// Array represents null node
+// Null represents null node
 type Null struct{}
 
 // Type returns the node i.e. "null"
@@ -490,7 +491,7 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 		if reflect.PtrTo(out.Type()).Implements(decoderType) && out.CanAddr() {
 			dec := out.Addr().Interface().(JSONDecoder)
 			if err := dec.DecodeJSON(node); err != nil {
-				return fmt.Errorf("jtree: %w", err)
+				return err
 			}
 			return nil
 		}
@@ -506,7 +507,7 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 	// user interface type
 	val, err := opt.ctx().types().call(out.Type(), node, opt.context)
 	if err != nil {
-		return fmt.Errorf("jtree: %w", err)
+		return err
 	}
 	if val.IsValid() {
 		out.Set(val)
