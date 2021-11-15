@@ -254,13 +254,10 @@ func (s String) Decode(v interface{}, op ...Option) error {
 }
 
 // Object represents object node
-type Object struct {
-	keys   []string
-	values map[string]Node
-}
+type Object []*Field
 
 // Type returns the node i.e. "object"
-func (*Object) Type() string { return "object" }
+func (Object) Type() string { return "object" }
 
 // Field is used to construct objects
 type Field struct {
@@ -268,47 +265,40 @@ type Field struct {
 	Value Node
 }
 
-// Fields is used to construct objects
-type Fields []*Field
-
-// NewObject returns new Object node
-func (f Fields) NewObject() *Object {
-	object := Object{
-		keys:   make([]string, len(f)),
-		values: make(map[string]Node, len(f)),
-	}
-	for i, n := range f {
-		object.keys[i] = n.Key
-		object.values[n.Key] = n.Value
-	}
-	return &object
-}
-
 // Keys returns all object keys
-func (o *Object) Keys() []string {
-	return o.keys
+func (o Object) Keys() []string {
+	keys := make([]string, len(o))
+	for i, f := range o {
+		keys[i] = f.Key
+	}
+	return keys
 }
 
 // FieldByName returns the field with specific name or nil
-func (o *Object) FieldByName(f string) Node {
-	return o.values[f]
+func (o Object) FieldByName(field string) Node {
+	for _, f := range o {
+		if f.Key == field {
+			return f.Value
+		}
+	}
+	return nil
 }
 
 // Field returns i'th field or nil if the number of fields is exceeded
-func (o *Object) Field(i int) (string, Node) {
-	if i >= len(o.keys) {
+func (o Object) Field(i int) (string, Node) {
+	if i >= len(o) {
 		return "", nil
 	}
-	return o.keys[i], o.values[o.keys[i]]
+	return o[i].Key, o[i].Value
 }
 
 // NumField returns the number of fields
-func (o *Object) NumField() int {
-	return len(o.keys)
+func (o Object) NumField() int {
+	return len(o)
 }
 
 // Decode decodes the node into the value pointed by v
-func (o *Object) Decode(v interface{}, op ...Option) error {
+func (o Object) Decode(v interface{}, op ...Option) error {
 	fn := func(out reflect.Value, opt *options) error {
 		t := out.Type()
 		switch t.Kind() {
@@ -521,7 +511,7 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 		dst = reflect.New(float64Type).Elem()
 	case String:
 		dst = reflect.New(stringType).Elem()
-	case *Object:
+	case Object:
 		dst = reflect.New(objectType).Elem()
 	case Array:
 		dst = reflect.New(arrayType).Elem()

@@ -47,11 +47,8 @@ func (p *Parser) parseArray() (Array, error) {
 	return array, nil
 }
 
-func (p *Parser) parseObject() (*Object, error) {
-	object := Object{
-		keys:   make([]string, 0),
-		values: make(map[string]Node),
-	}
+func (p *Parser) parseObject() (Object, error) {
+	object := make(Object, 0)
 	more := true
 	for {
 		tok, err := p.r.token()
@@ -86,8 +83,7 @@ func (p *Parser) parseObject() (*Object, error) {
 				if err != nil {
 					return nil, err
 				}
-				object.keys = append(object.keys, key.str)
-				object.values[key.str] = value
+				object = append(object, &Field{Key: key.str, Value: value})
 				more = false
 			}
 		} else {
@@ -100,7 +96,7 @@ func (p *Parser) parseObject() (*Object, error) {
 			}
 		}
 	}
-	return &object, nil
+	return object, nil
 }
 
 func (p *Parser) parse(tok token) (Node, error) {

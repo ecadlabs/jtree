@@ -41,26 +41,26 @@ func TestParseArray(t *testing.T) {
 func TestParseObject(t *testing.T) {
 	src := []struct {
 		s   string
-		n   jtree.Node
+		n   jtree.Object
 		err string
 	}{
 		{
 			s: `{"a":123,"b":"aaa","c":"bbb"}`,
-			n: jtree.Fields{
+			n: jtree.Object{
 				{"a", newNumNode("123")},
 				{"b", jtree.String("aaa")},
 				{"c", jtree.String("bbb")},
-			}.NewObject(),
+			},
 		},
 		{
 			s: `{"a":123,"b":"aaa","c":"bbb",}`,
-			n: jtree.Fields{
+			n: jtree.Object{
 				{"a", newNumNode("123")},
 				{"b", jtree.String("aaa")},
 				{"c", jtree.String("bbb")},
-			}.NewObject(),
+			},
 		},
-		{s: `{}`, n: jtree.Fields{}.NewObject()},
+		{s: `{}`, n: jtree.Object{}},
 		{s: `{"a":123,"b":"aaa","c":"bbb"`, err: "EOF"},
 		{s: `{"a":123,"b":"aaa","c":`, err: "EOF"},
 		{s: `{"a":123,"b":"aaa","c",`, err: "jtree: colon expected at position 22: ','"},

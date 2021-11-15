@@ -46,7 +46,7 @@ func mkTime(s string) *time.Time {
 }
 
 func TestDecode(t *testing.T) {
-	objNode := jtree.Fields{
+	objNode := jtree.Object{
 		{"F0", (*jtree.Num)(big.NewFloat(1))},
 		{"f1", jtree.String("aaa")},
 		{"f2", jtree.String("bbb")},
@@ -56,7 +56,7 @@ func TestDecode(t *testing.T) {
 		{"ZZ", jtree.Null{}},
 		{"XX", (*jtree.Num)(big.NewFloat(3))},
 		{"QQ", jtree.Array{jtree.String("123"), jtree.String("456")}},
-	}.NewObject()
+	}
 
 	objVal := &T0{
 		T1: T1{
@@ -124,11 +124,11 @@ func TestDecode(t *testing.T) {
 		{n: jtree.Array{jtree.String("123"), jtree.String("456")}, out: new([]int), expect: &[]int{123, 456}, op: []jtree.Option{jtree.OpElem(jtree.OpString)}},
 
 		{
-			n: jtree.Fields{
+			n: jtree.Object{
 				{"f0", (*jtree.Num)(big.NewFloat(1))},
 				{"f1", jtree.String("aaa")},
 				{"f2", jtree.String("ccc")},
-			}.NewObject(),
+			},
 			out: new(map[string]interface{}),
 			expect: &(map[string]interface{}{
 				"f0": float64(1),
@@ -137,11 +137,11 @@ func TestDecode(t *testing.T) {
 			}),
 		},
 		{
-			n: jtree.Fields{
+			n: jtree.Object{
 				{"f0", (*jtree.Num)(big.NewFloat(1))},
 				{"f1", (*jtree.Num)(big.NewFloat(2))},
 				{"f2", (*jtree.Num)(big.NewFloat(3))},
-			}.NewObject(),
+			},
 			out: new(map[string]int),
 			expect: &(map[string]int{
 				"f0": 1,
@@ -238,7 +238,7 @@ type userTypeStr struct {
 func (u *userTypeStr) ImplKind() string { return "str" }
 
 func userTypeFunc(n jtree.Node, ctx *jtree.Context) (userType, error) {
-	obj, ok := n.(*jtree.Object)
+	obj, ok := n.(jtree.Object)
 	if !ok {
 		return nil, errors.New("not an object")
 	}
@@ -266,10 +266,10 @@ func TestUserType(t *testing.T) {
 		err    string
 	}{
 		{
-			n: jtree.Fields{
+			n: jtree.Object{
 				{"kind", jtree.String("int")},
 				{"int", (*jtree.Num)(big.NewFloat(1))},
-			}.NewObject(),
+			},
 			out: new(userType),
 			expect: &userTypeInt{
 				Kind: "int",
@@ -277,10 +277,10 @@ func TestUserType(t *testing.T) {
 			},
 		},
 		{
-			n: jtree.Fields{
+			n: jtree.Object{
 				{"kind", jtree.String("str")},
 				{"str", jtree.String("aaa")},
-			}.NewObject(),
+			},
 			out: new(userType),
 			expect: &userTypeStr{
 				Kind: "str",

@@ -27,7 +27,7 @@ type UserTypeStr struct {
 func (u *UserTypeStr) ImplKind() string { return "string" }
 
 func UserTypeFunc(n jtree.Node, ctx *jtree.Context) (UserType, error) {
-	obj, ok := n.(*jtree.Object)
+	obj, ok := n.(jtree.Object)
 	if !ok {
 		return nil, errors.New("object expected")
 	}
