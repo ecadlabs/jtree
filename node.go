@@ -8,7 +8,6 @@ import (
 	"math/big"
 	"reflect"
 	"strconv"
-	"strings"
 	"time"
 )
 
@@ -303,7 +302,7 @@ func (o Object) Decode(v interface{}, op ...Option) error {
 		t := out.Type()
 		switch t.Kind() {
 		case reflect.Struct:
-			fields := make(map[string]*structField)
+			fields := make(map[string]*StructField)
 			collectFields(t, nil, nil, fields)
 			for i := 0; i < o.NumField(); i++ {
 				key, elem := o.Field(i)
@@ -325,7 +324,7 @@ func (o Object) Decode(v interface{}, op ...Option) error {
 						dest = dest.Elem()
 					}
 				}
-				fopt := parseFieldOptions(field.opt, opt)
+				fopt := parseFieldOptions(field.Options, opt)
 				if err := elem.Decode(dest.Addr().Interface(), mkChildOptions(opt, fopt)...); err != nil {
 					return err
 				}
@@ -528,106 +527,6 @@ func decodeNode(v interface{}, node Node, decode decodeFunc, op ...Option) error
 	}
 	out.Set(dst.Convert(out.Type()))
 	return nil
-}
-
-func parseTag(tag string) (name string, opt []string) {
-	s := strings.Split(tag, ",")
-	return s[0], s[1:]
-}
-
-func parseFieldOptions(tags []string, opt *options) []Option {
-	out := make([]Option, 0, len(tags))
-	elemOp := make([]Option, 0, len(tags))
-	for _, s := range tags {
-		if len(s) == 0 {
-			continue
-		}
-		elem := false
-		if s[0] == '[' {
-			if s[len(s)-1] != ']' {
-				continue
-			}
-			s = s[1 : len(s)-1]
-			elem = true
-		}
-		var o Option
-		if s == "string" {
-			o = OpString
-		} else if enc := opt.ctx().encodings().get(s); enc != nil {
-			o = OpEncoding(enc)
-		} else {
-			continue
-		}
-		if elem {
-			elemOp = append(elemOp, o)
-			elem = false
-		} else {
-			out = append(out, o)
-		}
-	}
-	if len(elemOp) != 0 {
-		out = append(out, OpElem(elemOp...))
-	}
-	return out
-}
-
-type structField struct {
-	*reflect.StructField
-	opt []string
-}
-
-func mkIndex(a, b []int) []int {
-	cp := make([]int, len(a)+len(b))
-	copy(cp, a)
-	copy(cp[len(a):], b)
-	return cp
-}
-
-func collectFields(t reflect.Type, index []int, ptr []reflect.Type, out map[string]*structField) {
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		name, opt := parseTag(string(f.Tag.Get("json")))
-		if name == "-" {
-			continue
-		}
-		if name == "" && f.Anonymous && (f.Type.Kind() == reflect.Struct || f.Type.Kind() == reflect.Ptr && f.Type.Elem().Kind() == reflect.Struct) {
-			// dive
-			ft := f.Type
-			if ft.Kind() == reflect.Ptr {
-				if !f.IsExported() {
-					continue
-				}
-				i := 0
-				for ; i < len(ptr) && ptr[i] != ft; i++ {
-				}
-				if i < len(ptr) {
-					// loop detected
-					continue
-				}
-				ptr = append(ptr, ft)
-				ft = f.Type.Elem()
-			}
-			collectFields(ft, mkIndex(index, f.Index), ptr, out)
-		} else if !f.IsExported() {
-			continue
-		} else {
-			if name == "" {
-				name = f.Name
-			}
-			if prev, ok := out[name]; ok {
-				// we use simplified duplicated fields visibility rule here: shallowest and topmost wins
-				if len(prev.Index) <= len(f.Index) {
-					continue
-				}
-			}
-			tmp := f
-			tmp.Index = mkIndex(index, f.Index)
-			out[name] = &structField{
-				StructField: &tmp,
-				opt:         opt,
-			}
-		}
-	}
 }
 
 func mkChildOptions(opt *options, fopt []Option) []Option {
